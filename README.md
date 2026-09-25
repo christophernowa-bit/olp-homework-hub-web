@@ -1,22 +1,10 @@
-# OLP Homework Hub Web
+# OLP Homework Hub
 
-Clean frontend foundation for the new OLP Homework Hub.
+Clean React + TypeScript + Vite foundation for the OLP Homework Hub.
 
-## Stack
-- React + TypeScript
-- Vite
-- Lucide icons
-- No backend or Supabase dependency in this foundation
-
-## Local development
-```bash
+## Development
 npm install
 npm run dev
-```
 
 ## Production build
-```bash
 npm run build
-```
-
-The app is intentionally frontend-only at this stage. Authentication, Supabase, exam generation/import, storage and role permissions should be added as separate layers after the visual foundation is accepted.
