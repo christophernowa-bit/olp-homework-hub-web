@@ -1,8 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import Dashboard from './pages/Dashboard'
 
-function Dashboard() {
-  return <h1>Dashboard</h1>
-}
 
 function Exams() {
   return <h1>Exams</h1>
