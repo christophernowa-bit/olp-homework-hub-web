@@ -5,7 +5,7 @@ import Classes from './pages/Classes'
 import Settings from './pages/Settings'
 import AppLayout from './components/AppLayout'
 import Discussions from './pages/Discussions'
-
+import ResourceCentre from './pages/ResourceCentre'
 
 
 export default function App() {
@@ -16,6 +16,7 @@ export default function App() {
     <Route path="/exams" element={<Exams />} />
     <Route path="/classes" element={<Classes />} />
     <Route path="/discussions" element={<Discussions />} />
+    <Route path="/resources" element={<ResourceCentre />} />
     <Route path="/settings" element={<Settings />} />
   </Route>
 
