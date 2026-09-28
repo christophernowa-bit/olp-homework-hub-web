@@ -1,12 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
 import Exams from './pages/Exams'
+import Classes from './pages/Classes'
 
 
 
-function Classes() {
-  return <h1>Classes</h1>
-}
 
 function Settings() {
   return <h1>Settings</h1>
