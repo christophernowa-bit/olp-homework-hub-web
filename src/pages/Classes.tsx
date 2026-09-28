@@ -2,7 +2,7 @@ import { BookOpen, Plus, Search, Users } from 'lucide-react'
 
 export default function Classes() {
   return (
-    <main className="main">
+    <>
       <header className="topbar">
         <div>
           <p className="eyebrow">TEACHER WORKSPACE</p>
@@ -66,6 +66,6 @@ export default function Classes() {
           </button>
         </div>
       </section>
-    </main>
+    </>
   )
 }
