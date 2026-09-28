@@ -5,7 +5,7 @@ import {
   MessageCircle,
   Settings,
   Users,
-} from 'lucide-react'nb
+} from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
 
 export default function AppLayout() {
