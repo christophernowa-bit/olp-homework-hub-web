@@ -6,11 +6,13 @@ import Settings from './pages/Settings'
 import AppLayout from './components/AppLayout'
 import Discussions from './pages/Discussions'
 import ResourceCentre from './pages/ResourceCentre'
+import Login from './pages/Login'
 
 
 export default function App() {
   return (
    <Routes>
+   <Route path="/login" element={<Login />} />
   <Route element={<AppLayout />}>
     <Route path="/" element={<Dashboard />} />
     <Route path="/exams" element={<Exams />} />
