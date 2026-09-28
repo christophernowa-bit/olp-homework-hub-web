@@ -1,6 +1,7 @@
 import {
   FileText,
   LayoutDashboard,
+  MessageCircle,
   Settings,
   Users,
 } from 'lucide-react'
@@ -50,7 +51,13 @@ export default function AppLayout() {
             <Users size={18} />
             Classes
           </NavLink>
-
+<NavLink
+  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+  to="/discussions"
+>
+  <MessageCircle size={18} />
+  Discussions
+</NavLink>
           <NavLink
             to="/settings"
             className={({ isActive }) =>
