@@ -94,9 +94,5 @@ export default function Dashboard() {
           </div>
         </section>
       </main>
-          </section>
-    </main>
-  )
-}
-  )
+      )
 }
