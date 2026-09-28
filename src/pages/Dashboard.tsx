@@ -1,52 +1,13 @@
 import {
   FileText,
-  LayoutDashboard,
   Plus,
   Search,
-  Settings,
-  Users,
 } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
 
 export default function Dashboard() {
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">OLP</div>
-          <div>
-            <strong>Homework Hub</strong>
-            <span>Teacher workspace</span>
-          </div>
-        </div>
-
-        <nav className="nav">
-          <NavLink className="nav-item" to="/">
-            <LayoutDashboard size={18} />
-            Dashboard
-          </NavLink>
-
-          <NavLink className="nav-item" to="/exams">
-            <FileText size={18} />
-            Exams
-          </NavLink>
-
-          <NavLink className="nav-item" to="/classes">
-            <Users size={18} />
-            Classes
-          </NavLink>
-
-          <NavLink className="nav-item" to="/settings">
-            <Settings size={18} />
-            Settings
-          </NavLink>
-        </nav>
-
-        <div className="sidebar-note">
-          <strong>OLP Homework Hub</strong>
-          <p>A clean foundation for creating, editing and managing practice papers.</p>
-        </div>
-      </aside>
+    
+      
 
       <main className="main">
         <header className="topbar">
@@ -133,6 +94,9 @@ export default function Dashboard() {
           </div>
         </section>
       </main>
-    </div>
+          </section>
+    </main>
+  )
+}
   )
 }
