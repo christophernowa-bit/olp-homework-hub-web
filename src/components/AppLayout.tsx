@@ -1,10 +1,11 @@
 import {
+  BookOpen,
   FileText,
   LayoutDashboard,
   MessageCircle,
   Settings,
   Users,
-} from 'lucide-react'
+} from 'lucide-react'nb
 import { NavLink, Outlet } from 'react-router-dom'
 
 export default function AppLayout() {
@@ -57,6 +58,13 @@ export default function AppLayout() {
 >
   <MessageCircle size={18} />
   Discussions
+</NavLink>
+          <NavLink
+  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+  to="/resources"
+>
+  <BookOpen size={18} />
+  Resource Centre
 </NavLink>
           <NavLink
             to="/settings"
