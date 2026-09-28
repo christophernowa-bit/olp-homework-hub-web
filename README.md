@@ -12,3 +12,4 @@ npm run build
 Deployment trigger test.
 
 
+Deployment refresh after Supabase URL correction.
