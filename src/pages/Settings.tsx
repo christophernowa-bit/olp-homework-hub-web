@@ -1,6 +1,27 @@
-import { Bell, Lock, Save, User } from 'lucide-react'
+import { useState } from 'react'
+import { Bell, CheckCircle, Lock, Save, User } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 
 export default function Settings() {
+  const [connectionStatus, setConnectionStatus] = useState('Not tested')
+
+  async function testSupabaseConnection() {
+    setConnectionStatus('Testing...')
+
+    try {
+      const { error } = await supabase.auth.getSession()
+
+      if (error) {
+        setConnectionStatus(`Connection failed: ${error.message}`)
+        return
+      }
+
+      setConnectionStatus('Connected to Supabase successfully')
+    } catch {
+      setConnectionStatus('Connection failed')
+    }
+  }
+
   return (
     <main className="main">
       <header className="topbar">
@@ -59,6 +80,14 @@ export default function Settings() {
             <span>
               <strong>Security</strong>
               <small>Password and account access</small>
+            </span>
+          </button>
+
+          <button type="button" onClick={testSupabaseConnection}>
+            <CheckCircle size={17} />
+            <span>
+              <strong>Test Supabase Connection</strong>
+              <small>{connectionStatus}</small>
             </span>
           </button>
         </div>
