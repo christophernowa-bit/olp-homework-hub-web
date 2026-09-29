@@ -9,25 +9,23 @@ import ResourceCentre from './pages/ResourceCentre'
 import Login from './pages/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 
-<Routes>
-  <Route path="/login" element={<Login />} />
+export default function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<Login />} />
 
-  <Route element={<ProtectedRoute />}>
-    <Route element={<AppLayout />}>
-      <Route path="/" element={<Dashboard />} />
-      <Route path="/exams" element={<Exams />} />
-      <Route path="/classes" element={<Classes />} />
-      <Route path="/discussions" element={<Discussions />} />
-      <Route path="/resources" element={<ResourceCentre />} />
-      <Route path="/settings" element={<Settings />} />
-    </Route>
-  </Route>
+      <Route element={<ProtectedRoute />}>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/exams" element={<Exams />} />
+          <Route path="/classes" element={<Classes />} />
+          <Route path="/discussions" element={<Discussions />} />
+          <Route path="/resources" element={<ResourceCentre />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+      </Route>
 
-  <Route path="*" element={<Navigate to="/" replace />} />
-</Routes>
-
-  <Route path="*" element={<Navigate to="/" replace />} />
-</Routes>
-
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   )
 }
