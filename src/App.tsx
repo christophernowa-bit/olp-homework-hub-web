@@ -10,9 +10,8 @@ import Login from './pages/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 import RoleRoute from './components/RoleRoute'
 import OwnerDashboard from './pages/OwnerDashboard'
+
 export default function App() {
-  return (
-   export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
