@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import { Bell, CheckCircle, Lock, Save, User } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-
+import { useEffect, useState } from 'react'
+import { getCurrentUserRole, type UserRole } from '../lib/userRole'
 export default function Settings() {
+  const [userRole, setUserRole] = useState<UserRole | null>(null)
+
+useEffect(() => {
+  getCurrentUserRole().then(setUserRole)
+}, [])
   const [connectionStatus, setConnectionStatus] = useState('Not tested')
 
   async function testSupabaseConnection() {
@@ -59,8 +65,14 @@ export default function Settings() {
 
           <div className="empty-state">
             <User size={34} />
-            <strong>Teacher profile</strong>
-            <p>Profile settings will be connected later.</p>
+           <strong>
+  {userRole === 'platform_owner' ? 'Platform Owner' : userRole ?? 'Loading role...'}
+</strong>
+<p>
+  {userRole
+    ? `Signed in with ${userRole.replace('_', ' ')} access.`
+    : 'Loading your account permissions...'}
+</p>
           </div>
         </div>
 
