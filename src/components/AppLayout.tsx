@@ -1,14 +1,26 @@
+import { useEffect, useState } from 'react'
 import {
   BookOpen,
   FileText,
   LayoutDashboard,
   MessageCircle,
   Settings,
+  ShieldCheck,
   Users,
 } from 'lucide-react'
 import { NavLink, Outlet } from 'react-router-dom'
+import {
+  getCurrentUserRole,
+  type UserRole,
+} from '../lib/userRole'
 
 export default function AppLayout() {
+  const [userRole, setUserRole] = useState<UserRole | null>(null)
+
+  useEffect(() => {
+    getCurrentUserRole().then(setUserRole)
+  }, [])
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -52,20 +64,27 @@ export default function AppLayout() {
             <Users size={18} />
             Classes
           </NavLink>
-<NavLink
-  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-  to="/discussions"
->
-  <MessageCircle size={18} />
-  Discussions
-</NavLink>
+
           <NavLink
-  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-  to="/resources"
->
-  <BookOpen size={18} />
-  Resource Centre
-</NavLink>
+            to="/discussions"
+            className={({ isActive }) =>
+              `nav-item${isActive ? ' active' : ''}`
+            }
+          >
+            <MessageCircle size={18} />
+            Discussions
+          </NavLink>
+
+          <NavLink
+            to="/resources"
+            className={({ isActive }) =>
+              `nav-item${isActive ? ' active' : ''}`
+            }
+          >
+            <BookOpen size={18} />
+            Resource Centre
+          </NavLink>
+
           <NavLink
             to="/settings"
             className={({ isActive }) =>
@@ -75,6 +94,18 @@ export default function AppLayout() {
             <Settings size={18} />
             Settings
           </NavLink>
+
+          {userRole === 'platform_owner' && (
+            <NavLink
+              to="/owner"
+              className={({ isActive }) =>
+                `nav-item${isActive ? ' active' : ''}`
+              }
+            >
+              <ShieldCheck size={18} />
+              Platform Owner
+            </NavLink>
+          )}
         </nav>
 
         <div className="sidebar-note">
