@@ -8,8 +8,11 @@ import Discussions from './pages/Discussions'
 import ResourceCentre from './pages/ResourceCentre'
 import Login from './pages/Login'
 import ProtectedRoute from './components/ProtectedRoute'
-
+import RoleRoute from './components/RoleRoute'
+import OwnerDashboard from './pages/OwnerDashboard'
 export default function App() {
+  return (
+   export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -22,6 +25,10 @@ export default function App() {
           <Route path="/discussions" element={<Discussions />} />
           <Route path="/resources" element={<ResourceCentre />} />
           <Route path="/settings" element={<Settings />} />
+        </Route>
+
+        <Route element={<RoleRoute allowedRoles={['platform_owner']} />}>
+          <Route path="/owner" element={<OwnerDashboard />} />
         </Route>
       </Route>
 
