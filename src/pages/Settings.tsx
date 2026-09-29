@@ -1,15 +1,15 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Bell, CheckCircle, Lock, Save, User } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { useEffect, useState } from 'react'
 import { getCurrentUserRole, type UserRole } from '../lib/userRole'
+
 export default function Settings() {
   const [userRole, setUserRole] = useState<UserRole | null>(null)
-
-useEffect(() => {
-  getCurrentUserRole().then(setUserRole)
-}, [])
   const [connectionStatus, setConnectionStatus] = useState('Not tested')
+
+  useEffect(() => {
+    getCurrentUserRole().then(setUserRole)
+  }, [])
 
   async function testSupabaseConnection() {
     setConnectionStatus('Testing...')
@@ -58,21 +58,25 @@ useEffect(() => {
           <div className="panel-heading">
             <div>
               <h3>Profile</h3>
-              <p>Your account details will appear here.</p>
+              <p>Your account details and permissions.</p>
             </div>
             <User size={22} />
           </div>
 
           <div className="empty-state">
             <User size={34} />
-           <strong>
-  {userRole === 'platform_owner' ? 'Platform Owner' : userRole ?? 'Loading role...'}
-</strong>
-<p>
-  {userRole
-    ? `Signed in with ${userRole.replace('_', ' ')} access.`
-    : 'Loading your account permissions...'}
-</p>
+
+            <strong>
+              {userRole === 'platform_owner'
+                ? 'Platform Owner'
+                : userRole ?? 'Loading role...'}
+            </strong>
+
+            <p>
+              {userRole
+                ? `Signed in with ${userRole.replace('_', ' ')} access.`
+                : 'Loading your account permissions...'}
+            </p>
           </div>
         </div>
 
