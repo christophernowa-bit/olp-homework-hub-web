@@ -10,7 +10,7 @@ import Login from './pages/Login'
 import ProtectedRoute from './components/ProtectedRoute'
 import RoleRoute from './components/RoleRoute'
 import OwnerDashboard from './pages/OwnerDashboard'
-
+import UsersRoles from './pages/UsersRoles'
 export default function App() {
   return (
     <Routes>
@@ -27,9 +27,9 @@ export default function App() {
         </Route>
 
         <Route element={<RoleRoute allowedRoles={['platform_owner']} />}>
-          <Route path="/owner" element={<OwnerDashboard />} />
-        </Route>
-      </Route>
+  <Route path="/owner" element={<OwnerDashboard />} />
+  <Route path="/owner/users" element={<UsersRoles />} />
+</Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
