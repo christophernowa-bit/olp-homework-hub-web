@@ -1707,3 +1707,115 @@
     width: fit-content;
   }
 }
+
+/* =========================================================
+   HOMEWORK / ASSIGNMENTS — PHASE 3A.1
+   Teacher Submission Viewer
+   ========================================================= */
+
+.assignment-review-hero {
+  margin-top: 18px;
+}
+
+.assignment-submissions-panel {
+  margin-top: 18px;
+}
+
+.assignment-submission-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.assignment-submission-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid #e4e9f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.assignment-submission-student {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.assignment-submission-student strong {
+  color: #172033;
+  font-size: .82rem;
+}
+
+.assignment-submission-student span {
+  color: #475569;
+  font-size: .72rem;
+  overflow-wrap: anywhere;
+}
+
+.assignment-submission-student small {
+  color: #64748b;
+  font-size: .68rem;
+}
+
+.assignment-submission-state {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.assignment-submission-state button {
+  min-height: 31px;
+  padding: 5px 8px;
+  border: 1px solid #dce2ea;
+  border-radius: 7px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: .69rem;
+  font-weight: 600;
+}
+
+.assignment-submission-state button:hover {
+  background: #f8fafc;
+}
+
+.assignment-response-preview {
+  grid-column: 1 / -1;
+  padding: 13px;
+  border: 1px solid #dfe5ee;
+  border-radius: 9px;
+  background: #f8fafc;
+}
+
+.assignment-response-preview .panel-heading {
+  margin-bottom: 10px;
+}
+
+.assignment-response-preview p {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #334155;
+  font-size: .77rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 700px) {
+  .assignment-submission-row {
+    grid-template-columns: 1fr;
+  }
+
+  .assignment-submission-state {
+    justify-content: flex-start;
+  }
+
+  .assignment-response-preview {
+    grid-column: auto;
+  }
+}
