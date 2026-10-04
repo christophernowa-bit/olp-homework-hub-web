@@ -3056,3 +3056,13 @@
 
 /* v10.1 focused creator layout correction */
 .exam-add-after-question { display: flex; justify-content: flex-start; margin-top: 12px; padding-top: 10px; border-top: 1px solid #e5e7eb; }
+
+/* v10.2 whole-paper marking key */
+.exam-whole-marking-key { margin-top: 18px; }
+.exam-marking-key-drop { display:grid; gap:6px; padding:22px; border:2px dashed #cbd5e1; border-radius:14px; cursor:pointer; text-align:center; }
+.exam-marking-key-drop input { margin:8px auto 0; }
+.exam-marking-key-file,.exam-marking-key-selected { display:flex; gap:14px; align-items:center; justify-content:space-between; flex-wrap:wrap; }
+.exam-marking-key-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.exam-file-button { cursor:pointer; }
+.exam-file-button input { display:none; }
+.exam-marking-key-selected { margin-top:12px; padding-top:12px; border-top:1px solid #e2e8f0; }
