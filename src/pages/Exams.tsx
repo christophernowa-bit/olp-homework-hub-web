@@ -1658,7 +1658,750 @@ export default function Exams() {
                     <p className="admin-message admin-message-error">{studentVisualErrors[question.id]}</p>
                   )}
 
+                  {(question.question_type === 'short_answer' ||
+                    question.question_type === 'long_answer' ||
+                    question.question_type === 'structured') &&
+                    !questions.some((child) => child.parent_question_id === question.id) && (
+                    <textarea
+                      rows={question.question_type === 'short_answer' ? 3 : 7}
+                      value={answer.answer_text ?? ''}
+                      placeholder="Type your answer here"
+                      readOnly={studentReadOnly}
+                      onChange={(event) => queueStudentTextSave(question, event.target.value)}
+                      onBlur={() => void flushStudentTextSaves(question.id)}
+                    />
+                  )}
 
+                  {question.question_type === 'multiple_choice' && (
+                    <div className="exam-options-review">
+                      {questionOptions.map((option) => (
+                        <label key={option.id}>
+                          <input
+                            type="radio"
+                            disabled={studentReadOnly}
+                            name={`question-${question.id}`}
+                            checked={answer.selected_option_key === option.option_key}
+                            onChange={() =>
+                              void saveStudentAnswer(question, {
+                                selected_option_key: option.option_key,
+                              })
+                            }
+                          />
+                          <span>{option.option_key ?? '•'}</span>
+                          <span>{option.option_text}</span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
+
+                  {question.question_type === 'dropdown' && (
+                    <select
+                      disabled={studentReadOnly}
+                      value={answer.dropdown_value ?? ''}
+                      onChange={(event) =>
+                        void saveStudentAnswer(question, { dropdown_value: event.target.value })
+                      }
+                    >
+                      <option value="">Choose an answer</option>
+                      {questionOptions.map((option) => (
+                        <option key={option.id} value={option.option_key ?? option.option_text}>
+                          {option.option_key ? `${option.option_key}. ` : ''}{option.option_text}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
+                  {question.question_type === 'matching' && (
+                    <div className="exam-matching-review">
+                      {questionMatchingItems
+                        .filter((item) => item.side === 'left')
+                        .map((left) => {
+                          const leftKey = left.item_key ?? ''
+                          const selected =
+                            matchingResponse.find(
+                              (item: any) => item?.left_key === leftKey,
+                            )?.right_key ?? ''
+                          const rightItems = questionMatchingItems.filter(
+                            (item) => item.side === 'right',
+                          )
+                          return (
+                            <label
+                              key={left.id}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={(event) => {
+                                event.preventDefault()
+                                const rightKey = event.dataTransfer.getData('text/plain')
+                                if (rightKey) updateMatchingAnswer(question, leftKey, rightKey)
+                              }}
+                              style={{ padding: '8px', border: '1px dashed #cbd5e1', borderRadius: '8px' }}
+                            >
+                              <span>{left.item_text}</span>
+                              <select
+                                disabled={studentReadOnly}
+                                value={selected}
+                                onChange={(event) =>
+                                  updateMatchingAnswer(
+                                    question,
+                                    leftKey,
+                                    event.target.value,
+                                  )
+                                }
+                              >
+                                <option value="">Choose match</option>
+                                {rightItems.map((right) => (
+                                  <option
+                                    key={right.id}
+                                    value={right.item_key ?? ''}
+                                  >
+                                    {right.item_text}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )
+                        })}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
+                        {questionMatchingItems.filter((item) => item.side === 'right').map((right) => (
+                          <button
+                            key={right.id}
+                            type="button"
+                            disabled={studentReadOnly}
+                            draggable={!studentReadOnly}
+                            onDragStart={(event) => event.dataTransfer.setData('text/plain', right.item_key)}
+                            className="secondary"
+                            title="Drag this choice onto a left-hand item, or use the dropdown above."
+                          >
+                            {right.item_text}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="exam-question-review-actions">
+                    <span className={`assignment-status ${answerIsComplete(question) ? 'published' : 'draft'}`}>
+                      {answerIsComplete(question) ? 'Answered' : 'Not answered'}
+                    </span>
+                    {studentSavingQuestionId === question.id && <span>Saving…</span>}
+                  </div>
+                </article>
+              )
+            })}
+          </section>
+        </main>
+      )
+    }
+
+    return (
+      <main className="main">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">STUDENT WORKSPACE</p>
+            <h1>My Exams</h1>
+          </div>
+          <button className="profile" type="button">ST</button>
+        </header>
+
+        <section className="welcome">
+          <div>
+            <p className="eyebrow">EXAMS & ASSESSMENTS</p>
+            <h2>Your exams in one place.</h2>
+            <p className="muted">
+              Published exams from your enrolled classes appear under their subjects. Open a paper to start, continue, or review a submission.
+            </p>
+          </div>
+        </section>
+
+        {error && <p className="admin-message admin-message-error">{error}</p>}
+
+        <section className="stats">
+          <div className="card">
+            <span>Available</span>
+            <strong>
+              {exams.filter((exam) => exam.status === 'published' && !studentAttemptFor(exam.id)).length}
+            </strong>
+            <small>Ready to start</small>
+          </div>
+          <div className="card">
+            <span>In progress</span>
+            <strong>
+              {studentAttempts.filter((attempt) => attempt.status === 'in_progress').length}
+            </strong>
+            <small>Started exams</small>
+          </div>
+          <div className="card">
+            <span>Submitted</span>
+            <strong>
+              {studentAttempts.filter((attempt) => attempt.status !== 'in_progress').length}
+            </strong>
+            <small>Completed attempts</small>
+          </div>
+        </section>
+
+        <section className="panel exam-browser-panel">
+          <div className="panel-heading assignment-list-heading">
+            <div>
+              <h3>My exams</h3>
+              <p>
+                {visibleStudentExams.length}{' '}
+                {visibleStudentExams.length === 1 ? 'exam' : 'exams'}
+              </p>
+            </div>
+            <div className="assignment-toolbar">
+              <select
+                value={studentExamFilter}
+                onChange={(event) =>
+                  setStudentExamFilter(
+                    event.target.value as
+                      | 'all'
+                      | 'available'
+                      | 'in_progress'
+                      | 'submitted',
+                  )
+                }
+              >
+                <option value="all">All exams</option>
+                <option value="available">Available</option>
+                <option value="in_progress">In progress</option>
+                <option value="submitted">Submitted</option>
+              </select>
+            </div>
+          </div>
+
+          {visibleStudentExams.length === 0 ? (
+            <div className="empty-state">
+              <BookOpen size={34} />
+              <strong>No exams found</strong>
+              <p>
+                Published exams from your actively enrolled classes will appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="exam-subject-groups">
+              {Object.entries(studentExamGroups).map(([subject, subjectExams]) => (
+                <section className="exam-subject-group" key={subject}>
+                  <h4>{subject}</h4>
+                  <div className="assignment-list">
+                    {subjectExams.map((exam) => {
+                      const attempt = studentAttemptFor(exam.id)
+                      const state = studentExamState(exam)
+                      return (
+                        <article className="assignment-item" key={exam.id}>
+                          <div className="assignment-item-main">
+                            <div className="assignment-item-title">
+                              <strong>{exam.title}</strong>
+                              <span className={`assignment-status ${state.className}`}>{state.label}</span>
+                            </div>
+                            <p>{classNameForStudent(exam.class_id)} · {subjectNameForStudent(exam.subject_id)}</p>
+                            <div className="assignment-meta">
+                              <span>{exam.total_marks} marks</span>
+                              {attempt?.started_at && <span>Started {new Date(attempt.started_at).toLocaleString()}</span>}
+                              {attempt?.submitted_at && <span>Submitted {new Date(attempt.submitted_at).toLocaleString()}</span>}
+                            </div>
+                          </div>
+                          <div className="assignment-actions">
+                            {exam.status === 'published' && !attempt && (
+                              <button className="primary compact-action" type="button" disabled={studentRunnerLoading} onClick={() => void openStudentRunner(exam, null)}>
+                                {studentRunnerLoading ? 'Opening…' : 'Start exam'}
+                              </button>
+                            )}
+                            {attempt?.status === 'in_progress' && (
+                              <button className="primary compact-action" type="button" disabled={studentRunnerLoading} onClick={() => void openStudentRunner(exam, attempt)}>
+                                {studentRunnerLoading ? 'Opening…' : 'Continue exam'}
+                              </button>
+                            )}
+                            {attempt && attempt.status !== 'in_progress' && (
+                              <button className="secondary compact-action" type="button" disabled={studentRunnerLoading} onClick={() => void openStudentRunner(exam, attempt)}>
+                                {studentRunnerLoading ? 'Opening…' : 'View submission'}
+                              </button>
+                            )}
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          )}
+
+          <p className="muted" style={{ marginTop: '16px' }}>
+            Start creates one secure attempt. Continue reopens that same attempt, and
+            answers are saved to your account as you work.
+          </p>
+        </section>
+      </main>
+    )
+  }
+
+  if (reviewExam && !teacherEditMode) {
+    return (
+      <main className="main">
+        <header className="topbar">
+          <div><p className="eyebrow">EXAM PAPER</p><h1>{reviewExam.title}</h1></div>
+          <button className="profile" type="button">{role === 'platform_owner' ? 'PO' : 'TR'}</button>
+        </header>
+        <div className="exam-view-toolbar">
+          <button className="secondary compact-action" type="button" onClick={() => setReviewExam(null)}>← Back to Exams</button>
+          <button className="primary compact-action" type="button" onClick={() => setTeacherEditMode(true)}>Edit exam</button>
+        </div>
+        {message && <p className="admin-message admin-message-success">{message}</p>}
+        {error && <p className="admin-message admin-message-error">{error}</p>}
+        <section className="panel exam-paper-header">
+          <div className="panel-heading"><div><h3>{reviewExam.title}</h3><p>{reviewExam.instructions || 'Answer all questions.'}</p></div><span className={`assignment-status ${reviewExam.status}`}>{reviewExam.status === 'published' ? 'Published' : 'Draft'}</span></div>
+          <div className="exam-review-summary"><span>{questions.length} questions</span><span>{questions.reduce((sum, q) => sum + (Number(q.marks) || 0), 0)} marks</span></div>
+        </section>
+        <section className="exam-paper-questions">
+          {questions.map((question) => {
+            const qOptions = options.filter((o) => o.question_id === question.id)
+            const qMatching = matchingItems.filter((i) => i.question_id === question.id)
+            return (
+              <article className="panel exam-paper-question" key={question.id}>
+                <div className="exam-paper-question-heading"><strong>{question.question_number}</strong><span>{question.marks} {question.marks === 1 ? 'mark' : 'marks'}</span></div>
+                <p style={{ whiteSpace: 'pre-wrap' }}>{question.question_text}</p>
+                {questionDiagramUrls[question.id] && <img className="exam-paper-diagram" src={questionDiagramUrls[question.id]} alt={`Diagram for question ${question.question_number}`} />}
+                {(question.question_type === 'multiple_choice' || question.question_type === 'dropdown') && qOptions.length > 0 && <div className="exam-paper-options">{qOptions.map((o) => <div key={o.id}><strong>{o.option_key}.</strong> {o.option_text}</div>)}</div>}
+                {question.question_type === 'matching' && qMatching.length > 0 && <div className="exam-paper-options">{qMatching.filter(i => i.side === 'left').map(i => <div key={i.id}>{i.item_text}</div>)}</div>}
+              </article>
+            )
+          })}
+        </section>
+        <section className="panel exam-answer-key">
+          <div className="panel-heading"><div><h3>Answer Key / Mark Scheme</h3><p>Teacher and platform-owner view only.</p></div></div>
+          <div className="answer-key-table">
+            <div className="answer-key-row answer-key-head"><strong>Question</strong><strong>Answer / marking guidance</strong><strong>Marks</strong></div>
+            {questions.map((question) => {
+              const scheme = markSchemes.find((m) => m.question_id === question.id)
+              const qOptions = options.filter((o) => o.question_id === question.id)
+              const key = scheme?.answer_key as any
+              let answer = scheme?.expected_answer || ''
+              if (question.question_type === 'multiple_choice' || question.question_type === 'dropdown') {
+                const correct = String(key?.correct_option ?? '')
+                const opt = qOptions.find(o => o.option_key === correct)
+                answer = correct ? `${correct}${opt?.option_text ? `. ${opt.option_text}` : ''}` : answer
+              }
+              if (!answer && Array.isArray(scheme?.marking_points)) answer = scheme!.marking_points.map((p:any) => typeof p === 'string' ? p : p?.text ?? '').filter(Boolean).join('; ')
+              if (!answer && question.question_type === 'matching' && key) answer = Object.entries(key).map(([l,r]) => `${l} → ${String(r)}`).join('; ')
+              return <div className="answer-key-row" key={question.id}><strong>{question.question_number}</strong><span>{answer || '—'}</span><span>{question.marks}</span></div>
+            })}
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  if (reviewExam && teacherEditMode) {
+    return (
+      <main className="main">
+        <header className="topbar">
+          <div>
+            <p className="eyebrow">EXAM IMPORT REVIEW</p>
+            <h1>{reviewExam.title}</h1>
+          </div>
+          <button className="profile" type="button">
+            {role === 'platform_owner' ? 'PO' : 'TR'}
+          </button>
+        </header>
+
+        <button
+          className="secondary"
+          type="button"
+          onClick={() => setTeacherEditMode(false)}
+        >
+          ← View exam
+        </button>
+
+        {message && <p className="admin-message admin-message-success">{message}</p>}
+        {error && <p className="admin-message admin-message-error">{error}</p>}
+
+        <section className="panel exam-review-header">
+          <div className="panel-heading">
+            <div>
+              <h3>Review reproduced exam</h3>
+              <p>
+                Check every question against the original paper before publishing.
+              </p>
+            </div>
+            <span className={`assignment-status ${reviewExam.status}`}>
+              {reviewExam.status === 'published' ? 'Published' : 'Draft'}
+            </span>
+          </div>
+
+          <div className="exam-review-meta">
+            <label>
+              <span>Exam title</span>
+              <input
+                value={reviewExam.title}
+                onChange={(event) =>
+                  setReviewExam({
+                    ...reviewExam,
+                    title: event.target.value,
+                  })
+                }
+              />
+            </label>
+
+            <label className="exam-review-instructions">
+              <span>Instructions</span>
+              <textarea
+                value={reviewExam.instructions ?? ''}
+                onChange={(event) =>
+                  setReviewExam({
+                    ...reviewExam,
+                    instructions: event.target.value,
+                  })
+                }
+              />
+            </label>
+          </div>
+
+          <div className="exam-review-summary">
+            <span>{questions.length} questions</span>
+            <span>
+              {questions.reduce(
+                (sum, question) => sum + (Number(question.marks) || 0),
+                0,
+              )}{' '}
+              marks
+            </span>
+            <button className="secondary" type="button" onClick={() => void addQuestion(null)}>
+              + Add question
+            </button>
+            <button
+              className="primary"
+              type="button"
+              onClick={() => void saveExamDetails()}
+            >
+              <Save size={15} /> Save exam details
+            </button>
+            {reviewExam.status === 'published' ? (
+              <button
+                className="secondary"
+                type="button"
+                disabled={publishingExam}
+                onClick={() => void returnExamToDraft()}
+              >
+                {publishingExam ? 'Updating…' : 'Return to draft'}
+              </button>
+            ) : (
+              <button
+                className="primary"
+                type="button"
+                disabled={publishingExam || reviewLoading}
+                onClick={() => void publishExam()}
+              >
+                {publishingExam ? 'Publishing…' : 'Publish exam'}
+              </button>
+            )}
+          </div>
+        </section>
+
+        {reviewLoading ? (
+          <div className="empty-state">
+            <RefreshCw size={32} />
+            <strong>Loading reproduced questions…</strong>
+          </div>
+        ) : (
+          <section className="exam-question-review-list">
+            {questions.map((question) => {
+              const questionOptions = options.filter(
+                (option) => option.question_id === question.id,
+              )
+              const questionMatchingItems = matchingItems.filter(
+                (item) => item.question_id === question.id,
+              )
+              const questionMarkScheme = markSchemes.find(
+                (scheme) => scheme.question_id === question.id,
+              )
+
+              return (
+                <article className="panel exam-question-review" key={question.id}>
+                  <div className="exam-question-review-top">
+                    <label>
+                      <span>Number</span>
+                      <input
+                        value={question.question_number}
+                        onChange={(event) =>
+                          updateQuestionLocal(question.id, {
+                            question_number: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+
+                    <label>
+                      <span>Question type</span>
+                      <select
+                        value={question.question_type}
+                        onChange={(event) =>
+                          updateQuestionLocal(question.id, {
+                            question_type: event.target.value as QuestionType,
+                          })
+                        }
+                      >
+                        {Object.entries(questionLabels).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label>
+                      <span>Marks</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.5"
+                        value={question.marks}
+                        onChange={(event) =>
+                          updateQuestionLocal(question.id, {
+                            marks: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <label style={{ display: 'block', marginTop: '10px' }}>
+                    <span>Structured parent</span>
+                    <select
+                      value={question.parent_question_id ?? ''}
+                      onChange={(event) => updateQuestionLocal(question.id, { parent_question_id: event.target.value || null })}
+                    >
+                      <option value="">None — top-level question</option>
+                      {questions
+                        .filter((candidate) => candidate.id !== question.id && candidate.question_type === 'structured' && !candidate.parent_question_id)
+                        .map((candidate) => (
+                          <option key={candidate.id} value={candidate.id}>
+                            Question {candidate.question_number}: {(candidate.question_text ?? '').slice(0, 70)}
+                          </option>
+                        ))}
+                    </select>
+                    <small>Choose a structured parent to make this a subquestion such as 3(a) or 3(b)(i).</small>
+                  </label>
+
+                  <label className="exam-question-text">
+                    <span>Question wording</span>
+                    <textarea
+                      ref={(element) => {
+                        questionTextRefs.current[question.id] = element
+                      }}
+                      value={question.question_text ?? ''}
+                      onPaste={(event) => void handleQuestionPaste(question, event)}
+                      onChange={(event) =>
+                        updateQuestionLocal(question.id, {
+                          question_text: event.target.value,
+                        })
+                      }
+                    />
+                  </label>
+
+                  <div
+                    className="exam-question-insert-tools"
+                    style={{ marginTop: '10px', padding: '10px', border: '1px solid #e4e9f0', borderRadius: '9px', background: '#f8fafc' }}
+                  >
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '.72rem', marginRight: '4px' }}>Insert</strong>
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', padding: '6px 9px', border: '1px solid #dce2ea', borderRadius: '7px', background: '#fff', cursor: 'pointer', fontSize: '.72rem', fontWeight: 600 }}>
+                        <ImagePlus size={14} />
+                        {diagramBusyId === question.id ? 'Saving diagram…' : 'Upload diagram'}
+                        <input
+                          type="file"
+                          accept="image/*"
+                          hidden
+                          disabled={diagramBusyId === question.id}
+                          onChange={(event) => {
+                            const image = event.target.files?.[0]
+                            if (image) {
+                              void attachDiagram(question, image).catch((err) =>
+                                setError(errorMessage(err, 'The diagram could not be uploaded.')),
+                              )
+                            }
+                            event.currentTarget.value = ''
+                          }}
+                        />
+                      </label>
+                      <span style={{ fontSize: '.7rem', color: '#64748b' }}>
+                        or copy an image, click in the question box and press Ctrl+V
+                      </span>
+                    </div>
+
+                    <div style={{ marginTop: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '6px', color: '#64748b', fontSize: '.68rem', fontWeight: 700 }}>
+                        <Sigma size={14} /> MATHS SYMBOLS
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+                        {examMathSymbols.map((symbol) => (
+                          <button
+                            key={symbol}
+                            type="button"
+                            title={`Insert ${symbol}`}
+                            onClick={() => insertMathSymbol(question, symbol)}
+                            style={{ minWidth: '32px', minHeight: '30px', padding: '4px 7px', border: '1px solid #dce2ea', borderRadius: '6px', background: '#fff', cursor: 'pointer', fontSize: '.82rem' }}
+                          >
+                            {symbol}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {questionDiagramUrls[question.id] && (
+                      <div style={{ marginTop: '10px' }}>
+                        <strong style={{ display: 'block', marginBottom: '6px', fontSize: '.72rem' }}>Attached diagram</strong>
+                        <img
+                          src={questionDiagramUrls[question.id]}
+                          alt={`Diagram for question ${question.question_number}`}
+                          style={{ display: 'block', width: '100%', maxWidth: '760px', maxHeight: '520px', objectFit: 'contain', border: '1px solid #dce2ea', borderRadius: '8px', background: '#fff' }}
+                        />
+                        <button
+                          type="button"
+                          disabled={diagramBusyId === question.id}
+                          onClick={() => void removeQuestionDiagram(question)}
+                          style={{ marginTop: '7px', padding: '6px 9px', border: '1px solid #dce2ea', borderRadius: '7px', background: '#fff', cursor: 'pointer', fontSize: '.7rem', fontWeight: 600 }}
+                        >
+                          Remove diagram
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {question.source_ref && (
+                    <div className="exam-source-ref">
+                      <FileSearch size={14} />
+                      <span>
+                        Source reference: {question.source_ref}
+                        {Boolean(question.settings?.diagram_required)
+                          ? ' · visual/diagram required'
+                          : ''}
+                      </span>
+                    </div>
+                  )}
+
+                  {Boolean(question.settings?.diagram_required) &&
+                    sourcePaperUrl && (
+                      <div className="exam-source-visual">
+                        <strong>
+                          Source visual
+                          {question.settings?.source_page
+                            ? ` · page ${question.settings.source_page}`
+                            : ''}
+                        </strong>
+                        {sourcePaperMime.startsWith('image/') ? (
+                          <img
+                            src={sourcePaperUrl}
+                            alt={`Source visual for question ${question.question_number}`}
+                            style={{ width: '100%', maxHeight: '620px', objectFit: 'contain', borderRadius: '10px', marginTop: '10px' }}
+                          />
+                        ) : (
+                          <iframe
+                            title={`Source page for question ${question.question_number}`}
+                            src={`${sourcePaperUrl}#page=${Number(question.settings?.source_page ?? 1)}&view=FitH`}
+                            style={{ width: '100%', height: '620px', border: '1px solid #d9dee8', borderRadius: '10px', marginTop: '10px' }}
+                          />
+                        )}
+                      </div>
+                    )}
+
+                  {(question.question_type === 'multiple_choice' ||
+                    question.question_type === 'dropdown') && (
+                    <div className="exam-options-review">
+                      <strong>{question.question_type === 'multiple_choice' ? 'Answer options' : 'Dropdown choices'}</strong>
+                      {questionOptions.map((option) => (
+                        <div key={option.id} style={{ display: 'grid', gridTemplateColumns: '52px 1fr auto', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
+                          <input value={option.option_key} onChange={(event) =>
+                            setOptions((current) => current.map((item) => item.id === option.id ? { ...item, option_key: event.target.value } : item))
+                          } />
+                          <input value={option.option_text} onChange={(event) => updateOptionLocal(option.id, event.target.value)} />
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <button type="button" className="secondary" onClick={() => moveOptionLocal(question.id, option.id, -1)}>↑</button>
+                            <button type="button" className="secondary" onClick={() => moveOptionLocal(question.id, option.id, 1)}>↓</button>
+                            <button type="button" className="secondary" onClick={() => void deleteOption(option)}>Remove</button>
+                          </div>
+                        </div>
+                      ))}
+                      <button type="button" className="secondary" style={{ marginTop: '10px' }} onClick={() => void insertOption(question)}>
+                        + Add option
+                      </button>
+                      <label style={{ display: 'block', marginTop: '12px' }}>
+                        <span>Correct answer</span>
+                        <select
+                          value={String(questionMarkScheme?.answer_key?.correct_option ?? '')}
+                          onChange={(event) =>
+                            updateMarkSchemeLocal(question.id, {
+                              answer_key: { ...(questionMarkScheme?.answer_key ?? {}), correct_option: event.target.value },
+                            })
+                          }
+                        >
+                          <option value="">Choose correct answer</option>
+                          {questionOptions.map((option) => (
+                            <option key={option.id} value={option.option_key}>{option.option_key}. {option.option_text}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  )}
+
+                  {question.question_type === 'matching' && (
+                    <div className="exam-matching-review">
+                      <strong>Matching / drag-and-drop pairs</strong>
+                      {questionMatchingItems.filter((i) => i.side === 'left').map((left) => {
+                        const rightKey = String(questionMarkScheme?.answer_key?.[left.item_key] ?? '')
+                        const rights = questionMatchingItems.filter((i) => i.side === 'right')
+                        return (
+                          <div key={left.id} style={{ display: 'grid', gridTemplateColumns: '1fr 34px 1fr auto', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
+                            <input value={left.item_text} onChange={(event) => updateMatchingItemLocal(left.id, { item_text: event.target.value })} />
+                            <span>→</span>
+                            <select value={rightKey} onChange={(event) =>
+                              updateMarkSchemeLocal(question.id, {
+                                answer_key: { ...(questionMarkScheme?.answer_key ?? {}), [left.item_key]: event.target.value },
+                              })
+                            }>
+                              <option value="">Correct match</option>
+                              {rights.map((right) => <option key={right.id} value={right.item_key}>{right.item_text}</option>)}
+                            </select>
+                            <button type="button" className="secondary" onClick={() => void deleteMatchingItem(left)}>Remove</button>
+                          </div>
+                        )
+                      })}
+                      <div style={{ marginTop: '10px' }}>
+                        <strong>Right-side items</strong>
+                        {questionMatchingItems.filter((i) => i.side === 'right').map((right) => (
+                          <div key={right.id} style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+                            <input style={{ flex: 1 }} value={right.item_text} onChange={(event) => updateMatchingItemLocal(right.id, { item_text: event.target.value })} />
+                            <button type="button" className="secondary" onClick={() => void deleteMatchingItem(right)}>Remove</button>
+                          </div>
+                        ))}
+                      </div>
+                      <button type="button" className="secondary" style={{ marginTop: '10px' }} onClick={() => void addMatchingRow(question)}>
+                        + Add matching pair
+                      </button>
+                    </div>
+                  )}
+
+                  {(question.question_type === 'short_answer' ||
+                    question.question_type === 'long_answer' ||
+                    question.question_type === 'structured') && (
+                    <div className="exam-options-review">
+                      <strong>Mark scheme</strong>
+                      <label>
+                        <span>Expected / model answer</span>
+                        <textarea
+                          rows={question.question_type === 'short_answer' ? 2 : 5}
+                          value={questionMarkScheme?.expected_answer ?? ''}
+                          onChange={(event) => updateMarkSchemeLocal(question.id, { expected_answer: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>Marking points — one per line</span>
+                        <textarea
+                          rows={4}
+                          value={Array.isArray(questionMarkScheme?.marking_points) ? questionMarkScheme!.marking_points.map((p: any) => typeof p === 'string' ? p : p?.text ?? '').filter(Boolean).join('\n') : ''}
+                          onChange={(event) => updateMarkSchemeLocal(question.id, { marking_points: event.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })}
+                        />
+                      </label>
+                    </div>
+                  )}
 
                   <div className="exam-question-review-actions">
                     <button type="button" className="secondary" onClick={() => void moveQuestion(question, -1)}>↑ Move</button>
@@ -1683,77 +2426,6 @@ export default function Exams() {
                 </article>
               )
             })}
-          </section>
-        )}
-
-        {!reviewLoading && (
-          <section className="panel exam-answer-key exam-answer-key-editor">
-            <div className="panel-heading">
-              <div>
-                <h3>Answer Key / Mark Scheme</h3>
-                <p>Teacher and platform-owner only. Keep all answers and marking guidance together at the end of the paper.</p>
-              </div>
-            </div>
-            <div className="answer-key-editor-list">
-              {questions.map((question) => {
-                const scheme = markSchemes.find((item) => item.question_id === question.id)
-                const qOptions = options.filter((item) => item.question_id === question.id)
-                const qMatching = matchingItems.filter((item) => item.question_id === question.id)
-                const leftItems = qMatching.filter((item) => item.side === 'left')
-                const rightItems = qMatching.filter((item) => item.side === 'right')
-                return (
-                  <article className="answer-key-editor-item" key={question.id}>
-                    <div className="answer-key-editor-heading">
-                      <strong>Question {question.question_number}</strong>
-                      <span>{question.marks} {question.marks === 1 ? 'mark' : 'marks'}</span>
-                    </div>
-                    {(question.question_type === 'multiple_choice' || question.question_type === 'dropdown') ? (
-                      <label>
-                        <span>Correct answer</span>
-                        <select
-                          value={String(scheme?.answer_key?.correct_option ?? '')}
-                          onChange={(event) => updateMarkSchemeLocal(question.id, { answer_key: { ...(scheme?.answer_key ?? {}), correct_option: event.target.value } })}
-                        >
-                          <option value="">Choose correct answer</option>
-                          {qOptions.map((option) => <option key={option.id} value={option.option_key}>{option.option_key}. {option.option_text}</option>)}
-                        </select>
-                      </label>
-                    ) : question.question_type === 'matching' ? (
-                      <div className="answer-key-matching">
-                        <span>Correct matches</span>
-                        {leftItems.map((left) => (
-                          <div className="answer-key-match-row" key={left.id}>
-                            <strong>{left.item_text || left.item_key}</strong>
-                            <span>→</span>
-                            <select
-                              value={String(scheme?.answer_key?.[left.item_key] ?? '')}
-                              onChange={(event) => updateMarkSchemeLocal(question.id, { answer_key: { ...(scheme?.answer_key ?? {}), [left.item_key]: event.target.value } })}
-                            >
-                              <option value="">Choose match</option>
-                              {rightItems.map((right) => <option key={right.id} value={right.item_key}>{right.item_text}</option>)}
-                            </select>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <>
-                        <label>
-                          <span>Expected / model answer</span>
-                          <textarea rows={question.question_type === 'short_answer' ? 2 : 4} value={scheme?.expected_answer ?? ''} onChange={(event) => updateMarkSchemeLocal(question.id, { expected_answer: event.target.value })} />
-                        </label>
-                        <label>
-                          <span>Marking points — one per line</span>
-                          <textarea rows={3} value={Array.isArray(scheme?.marking_points) ? scheme!.marking_points.map((point: any) => typeof point === 'string' ? point : point?.text ?? '').filter(Boolean).join('\n') : ''} onChange={(event) => updateMarkSchemeLocal(question.id, { marking_points: event.target.value.split('\n').map((value) => value.trim()).filter(Boolean) })} />
-                        </label>
-                      </>
-                    )}
-                    <button className="secondary compact-action" type="button" disabled={savingQuestionId === question.id} onClick={() => void saveQuestion(question)}>
-                      {savingQuestionId === question.id ? 'Saving…' : 'Save marking'}
-                    </button>
-                  </article>
-                )
-              })}
-            </div>
           </section>
         )}
       </main>
