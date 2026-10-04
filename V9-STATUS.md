@@ -22,3 +22,13 @@ Validation completed:
 - Full `npm run build` is still blocked here because the uploaded ZIP did not include `node_modules`/lockfile and npm dependency installation times out in this environment.
 
 Do not deploy this candidate until the database migration and Edge Function deployment order is approved and a real dependency-backed `npm run build` passes.
+
+## Live backend integration validation
+- `exam_v9_security` migration has been applied successfully to the live Supabase project.
+- `exam-visual` Edge Function v1 is ACTIVE with JWT verification enabled.
+- Existing `exam-import` v8 was left unchanged.
+- No active in-progress attempt is missing a server deadline.
+- Frontend calls `exam-visual` by question ID and `submit_exam_attempt` by attempt ID.
+- Timer reads the server-created `deadline_at`; repeated timeout submission is guarded.
+
+Remaining release gate: a genuine dependency-backed `npm run build` must pass. `npm install` is still timing out in this execution environment, so this candidate is not yet approved for frontend deployment. End-to-end browser testing with teacher/student accounts follows after the build passes.

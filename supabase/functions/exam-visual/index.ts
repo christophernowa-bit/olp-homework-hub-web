@@ -45,15 +45,12 @@ Deno.serve(async (req: Request) => {
     if (!isManager) {
       const { data: attempt, error: attemptError } = await userClient
         .from('exam_attempts')
-        .select('id,status,deadline_at')
+        .select('id,status')
         .eq('exam_id', question.exam_id)
         .eq('student_id', authData.user.id)
-        .eq('status', 'in_progress')
+        .in('status', ['in_progress', 'submitted', 'returned'])
         .maybeSingle()
-      if (attemptError || !attempt) throw new Error('An active exam attempt is required for this visual.')
-      if (attempt.deadline_at && Date.now() > new Date(attempt.deadline_at).getTime()) {
-        throw new Error('The exam time has ended.')
-      }
+      if (attemptError || !attempt) throw new Error('An exam attempt is required for this visual.')
     }
 
     const settings = (question.settings ?? {}) as Record<string, unknown>

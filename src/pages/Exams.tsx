@@ -206,6 +206,7 @@ export default function Exams() {
   const [loading, setLoading] = useState(true)
 
   const [reviewExam, setReviewExam] = useState<ExamRow | null>(null)
+  const [teacherEditMode, setTeacherEditMode] = useState(false)
   const [questions, setQuestions] = useState<QuestionRow[]>([])
   const [options, setOptions] = useState<OptionRow[]>([])
   const [matchingItems, setMatchingItems] = useState<MatchingItemRow[]>([])
@@ -257,30 +258,6 @@ export default function Exams() {
     void initialise()
   }, [])
 
-  useEffect(() => {
-    if (!studentRunnerExam || !studentAttempt || studentAttempt.status !== 'in_progress') {
-      setStudentSecondsLeft(null)
-      return
-    }
-    if (!studentAttempt.deadline_at) {
-      setStudentSecondsLeft(null)
-      return
-    }
-
-    const finishAt = new Date(studentAttempt.deadline_at).getTime()
-
-    const tick = () => {
-      const seconds = Math.max(0, Math.ceil((finishAt - Date.now()) / 1000))
-      setStudentSecondsLeft(seconds)
-      if (seconds <= 0 && !submitGuardRef.current) {
-        submitGuardRef.current = true
-        void submitStudentExam(true)
-      }
-    }
-    tick()
-    const timer = window.setInterval(tick, 1000)
-    return () => window.clearInterval(timer)
-  }, [studentRunnerExam?.id, studentAttempt?.id, studentAttempt?.status])
 
   async function loadStudentWorkspace(uid: string) {
     const [examResult, classResult, subjectResult, attemptResult] =
@@ -358,6 +335,12 @@ export default function Exams() {
     return true
   })
 
+  const studentExamGroups = visibleStudentExams.reduce<Record<string, ExamRow[]>>((groups, exam) => {
+    const subject = subjectNameForStudent(exam.subject_id)
+    ;(groups[subject] ??= []).push(exam)
+    return groups
+  }, {})
+
   async function openStudentRunner(exam: ExamRow, existingAttempt?: ExamAttemptRow | null) {
     try {
       setStudentRunnerLoading(true)
@@ -387,10 +370,6 @@ export default function Exams() {
           attempt = data as ExamAttemptRow
           setStudentAttempts((current) => [attempt as ExamAttemptRow, ...current])
         }
-      }
-
-      if (attempt.status !== 'in_progress') {
-        throw new Error('This exam has already been submitted.')
       }
 
       const [questionResult, answerResult] = await Promise.all([
@@ -535,9 +514,9 @@ export default function Exams() {
     return Boolean(String(answer.answer_text ?? '').trim())
   }
 
-  async function submitStudentExam(auto = false) {
+  async function submitStudentExam() {
     if (!studentAttempt || !studentRunnerExam) return
-    if (!auto && !window.confirm('Submit exam? You will not be able to change your answers afterwards.')) return
+    if (!window.confirm('Submit exam? You will not be able to change your answers afterwards.')) return
     try {
       setStudentSubmitting(true)
       setError('')
@@ -557,12 +536,12 @@ export default function Exams() {
       setStudentAnswers({})
       setStudentVisuals({})
       setStudentVisualErrors({})
-      setMessage(auto ? 'Time ended. Your exam was submitted.' : 'Exam submitted successfully.')
+      setMessage('Exam submitted successfully.')
     } catch (err) {
       setError(errorMessage(err, 'Could not submit this exam.'))
     } finally {
       setStudentSubmitting(false)
-      if (studentAttempt?.status === 'in_progress') submitGuardRef.current = false
+      submitGuardRef.current = false
     }
   }
 
@@ -892,6 +871,7 @@ export default function Exams() {
       if (schemeError) throw schemeError
 
       setReviewExam(loadedExam as ExamRow)
+      setTeacherEditMode(false)
       setQuestions(loadedQuestions)
       setOptions(loadedOptions)
       setMatchingItems(loadedMatchingItems)
@@ -1393,7 +1373,7 @@ export default function Exams() {
         .update({
           title: reviewExam.title.trim(),
           instructions: reviewExam.instructions?.trim() || null,
-          duration_minutes: reviewExam.duration_minutes,
+          duration_minutes: null,
           total_marks: calculatedMarks,
         })
         .eq('id', reviewExam.id)
@@ -1512,7 +1492,7 @@ export default function Exams() {
         .update({
           title: reviewExam.title.trim(),
           instructions: reviewExam.instructions?.trim() || null,
-          duration_minutes: reviewExam.duration_minutes,
+          duration_minutes: null,
           total_marks: calculatedMarks,
           status: 'published',
           published_at: publishedAt,
@@ -1599,8 +1579,7 @@ export default function Exams() {
 
     if (studentRunnerExam && studentAttempt) {
       const answeredCount = questions.filter(answerIsComplete).length
-      const minutes = studentSecondsLeft === null ? null : Math.floor(studentSecondsLeft / 60)
-      const seconds = studentSecondsLeft === null ? null : studentSecondsLeft % 60
+      const studentReadOnly = studentAttempt.status !== 'in_progress'
 
       return (
         <main className="main">
@@ -1620,23 +1599,23 @@ export default function Exams() {
                 <h3>{subjectNameForStudent(studentRunnerExam.subject_id)}</h3>
                 <p>{studentRunnerExam.instructions || 'Answer all questions carefully.'}</p>
               </div>
-              <span className="assignment-status published">
-                {studentSecondsLeft === null
-                  ? 'No time limit'
-                  : `${minutes}:${String(seconds).padStart(2, '0')} remaining`}
+              <span className={`assignment-status ${studentReadOnly ? 'submitted' : 'published'}`}>
+                {studentReadOnly ? 'Submitted · read only' : 'In progress'}
               </span>
             </div>
             <div className="exam-review-summary">
               <span>{answeredCount}/{questions.length} answered</span>
               <span>{studentRunnerExam.total_marks} marks</span>
-              <button
-                className="primary"
-                type="button"
-                disabled={studentSubmitting}
-                onClick={() => void submitStudentExam(false)}
-              >
-                {studentSubmitting ? 'Submitting…' : 'Submit exam'}
-              </button>
+              {!studentReadOnly && (
+                <button
+                  className="primary compact-action"
+                  type="button"
+                  disabled={studentSubmitting}
+                  onClick={() => void submitStudentExam()}
+                >
+                  {studentSubmitting ? 'Submitting…' : 'Submit exam'}
+                </button>
+              )}
             </div>
           </section>
 
@@ -1687,6 +1666,7 @@ export default function Exams() {
                       rows={question.question_type === 'short_answer' ? 3 : 7}
                       value={answer.answer_text ?? ''}
                       placeholder="Type your answer here"
+                      readOnly={studentReadOnly}
                       onChange={(event) => queueStudentTextSave(question, event.target.value)}
                       onBlur={() => void flushStudentTextSaves(question.id)}
                     />
@@ -1698,6 +1678,7 @@ export default function Exams() {
                         <label key={option.id}>
                           <input
                             type="radio"
+                            disabled={studentReadOnly}
                             name={`question-${question.id}`}
                             checked={answer.selected_option_key === option.option_key}
                             onChange={() =>
@@ -1715,6 +1696,7 @@ export default function Exams() {
 
                   {question.question_type === 'dropdown' && (
                     <select
+                      disabled={studentReadOnly}
                       value={answer.dropdown_value ?? ''}
                       onChange={(event) =>
                         void saveStudentAnswer(question, { dropdown_value: event.target.value })
@@ -1755,6 +1737,7 @@ export default function Exams() {
                             >
                               <span>{left.item_text}</span>
                               <select
+                                disabled={studentReadOnly}
                                 value={selected}
                                 onChange={(event) =>
                                   updateMatchingAnswer(
@@ -1782,7 +1765,8 @@ export default function Exams() {
                           <button
                             key={right.id}
                             type="button"
-                            draggable
+                            disabled={studentReadOnly}
+                            draggable={!studentReadOnly}
                             onDragStart={(event) => event.dataTransfer.setData('text/plain', right.item_key)}
                             className="secondary"
                             title="Drag this choice onto a left-hand item, or use the dropdown above."
@@ -1823,8 +1807,7 @@ export default function Exams() {
             <p className="eyebrow">EXAMS & ASSESSMENTS</p>
             <h2>Your exams in one place.</h2>
             <p className="muted">
-              Published exams from your enrolled classes appear here. Starting and
-              answering the paper will be enabled in the next runner step.
+              Published exams from your enrolled classes appear under their subjects. Open a paper to start, continue, or review a submission.
             </p>
           </div>
         </section>
@@ -1894,72 +1877,51 @@ export default function Exams() {
               </p>
             </div>
           ) : (
-            <div className="assignment-list">
-              {visibleStudentExams.map((exam) => {
-                const attempt = studentAttemptFor(exam.id)
-                const state = studentExamState(exam)
-                return (
-                  <article className="assignment-item" key={exam.id}>
-                    <div className="assignment-item-main">
-                      <div className="assignment-item-title">
-                        <strong>{exam.title}</strong>
-                        <span className={`assignment-status ${state.className}`}>
-                          {state.label}
-                        </span>
-                      </div>
-                      <p>
-                        {classNameForStudent(exam.class_id)} ·{' '}
-                        {subjectNameForStudent(exam.subject_id)}
-                      </p>
-                      <div className="assignment-meta">
-                        <span>
-                          {exam.duration_minutes
-                            ? `${exam.duration_minutes} minutes`
-                            : 'No time limit'}
-                        </span>
-                        <span>{exam.total_marks} marks</span>
-                        {attempt?.started_at && (
-                          <span>
-                            Started {new Date(attempt.started_at).toLocaleString()}
-                          </span>
-                        )}
-                        {attempt?.submitted_at && (
-                          <span>
-                            Submitted {new Date(attempt.submitted_at).toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="assignment-actions">
-                      {exam.status === 'published' && !attempt && (
-                        <button
-                          className="primary"
-                          type="button"
-                          disabled={studentRunnerLoading}
-                          onClick={() => void openStudentRunner(exam, null)}
-                        >
-                          {studentRunnerLoading ? 'Opening…' : 'Start exam'}
-                        </button>
-                      )}
-                      {attempt?.status === 'in_progress' && (
-                        <button
-                          className="primary"
-                          type="button"
-                          disabled={studentRunnerLoading}
-                          onClick={() => void openStudentRunner(exam, attempt)}
-                        >
-                          {studentRunnerLoading ? 'Opening…' : 'Continue exam'}
-                        </button>
-                      )}
-                      {attempt && attempt.status !== 'in_progress' && (
-                        <span className={`assignment-status ${state.className}`}>
-                          {state.label}
-                        </span>
-                      )}
-                    </div>
-                  </article>
-                )
-              })}
+            <div className="exam-subject-groups">
+              {Object.entries(studentExamGroups).map(([subject, subjectExams]) => (
+                <section className="exam-subject-group" key={subject}>
+                  <h4>{subject}</h4>
+                  <div className="assignment-list">
+                    {subjectExams.map((exam) => {
+                      const attempt = studentAttemptFor(exam.id)
+                      const state = studentExamState(exam)
+                      return (
+                        <article className="assignment-item" key={exam.id}>
+                          <div className="assignment-item-main">
+                            <div className="assignment-item-title">
+                              <strong>{exam.title}</strong>
+                              <span className={`assignment-status ${state.className}`}>{state.label}</span>
+                            </div>
+                            <p>{classNameForStudent(exam.class_id)} · {subjectNameForStudent(exam.subject_id)}</p>
+                            <div className="assignment-meta">
+                              <span>{exam.total_marks} marks</span>
+                              {attempt?.started_at && <span>Started {new Date(attempt.started_at).toLocaleString()}</span>}
+                              {attempt?.submitted_at && <span>Submitted {new Date(attempt.submitted_at).toLocaleString()}</span>}
+                            </div>
+                          </div>
+                          <div className="assignment-actions">
+                            {exam.status === 'published' && !attempt && (
+                              <button className="primary compact-action" type="button" disabled={studentRunnerLoading} onClick={() => void openStudentRunner(exam, null)}>
+                                {studentRunnerLoading ? 'Opening…' : 'Start exam'}
+                              </button>
+                            )}
+                            {attempt?.status === 'in_progress' && (
+                              <button className="primary compact-action" type="button" disabled={studentRunnerLoading} onClick={() => void openStudentRunner(exam, attempt)}>
+                                {studentRunnerLoading ? 'Opening…' : 'Continue exam'}
+                              </button>
+                            )}
+                            {attempt && attempt.status !== 'in_progress' && (
+                              <button className="secondary compact-action" type="button" disabled={studentRunnerLoading} onClick={() => void openStudentRunner(exam, attempt)}>
+                                {studentRunnerLoading ? 'Opening…' : 'View submission'}
+                              </button>
+                            )}
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
           )}
 
@@ -1972,7 +1934,63 @@ export default function Exams() {
     )
   }
 
-  if (reviewExam) {
+  if (reviewExam && !teacherEditMode) {
+    return (
+      <main className="main">
+        <header className="topbar">
+          <div><p className="eyebrow">EXAM PAPER</p><h1>{reviewExam.title}</h1></div>
+          <button className="profile" type="button">{role === 'platform_owner' ? 'PO' : 'TR'}</button>
+        </header>
+        <div className="exam-view-toolbar">
+          <button className="secondary compact-action" type="button" onClick={() => setReviewExam(null)}>← Back to Exams</button>
+          <button className="primary compact-action" type="button" onClick={() => setTeacherEditMode(true)}>Edit exam</button>
+        </div>
+        {message && <p className="admin-message admin-message-success">{message}</p>}
+        {error && <p className="admin-message admin-message-error">{error}</p>}
+        <section className="panel exam-paper-header">
+          <div className="panel-heading"><div><h3>{reviewExam.title}</h3><p>{reviewExam.instructions || 'Answer all questions.'}</p></div><span className={`assignment-status ${reviewExam.status}`}>{reviewExam.status === 'published' ? 'Published' : 'Draft'}</span></div>
+          <div className="exam-review-summary"><span>{questions.length} questions</span><span>{questions.reduce((sum, q) => sum + (Number(q.marks) || 0), 0)} marks</span></div>
+        </section>
+        <section className="exam-paper-questions">
+          {questions.map((question) => {
+            const qOptions = options.filter((o) => o.question_id === question.id)
+            const qMatching = matchingItems.filter((i) => i.question_id === question.id)
+            return (
+              <article className="panel exam-paper-question" key={question.id}>
+                <div className="exam-paper-question-heading"><strong>{question.question_number}</strong><span>{question.marks} {question.marks === 1 ? 'mark' : 'marks'}</span></div>
+                <p style={{ whiteSpace: 'pre-wrap' }}>{question.question_text}</p>
+                {questionDiagramUrls[question.id] && <img className="exam-paper-diagram" src={questionDiagramUrls[question.id]} alt={`Diagram for question ${question.question_number}`} />}
+                {(question.question_type === 'multiple_choice' || question.question_type === 'dropdown') && qOptions.length > 0 && <div className="exam-paper-options">{qOptions.map((o) => <div key={o.id}><strong>{o.option_key}.</strong> {o.option_text}</div>)}</div>}
+                {question.question_type === 'matching' && qMatching.length > 0 && <div className="exam-paper-options">{qMatching.filter(i => i.side === 'left').map(i => <div key={i.id}>{i.item_text}</div>)}</div>}
+              </article>
+            )
+          })}
+        </section>
+        <section className="panel exam-answer-key">
+          <div className="panel-heading"><div><h3>Answer Key / Mark Scheme</h3><p>Teacher and platform-owner view only.</p></div></div>
+          <div className="answer-key-table">
+            <div className="answer-key-row answer-key-head"><strong>Question</strong><strong>Answer / marking guidance</strong><strong>Marks</strong></div>
+            {questions.map((question) => {
+              const scheme = markSchemes.find((m) => m.question_id === question.id)
+              const qOptions = options.filter((o) => o.question_id === question.id)
+              const key = scheme?.answer_key as any
+              let answer = scheme?.expected_answer || ''
+              if (question.question_type === 'multiple_choice' || question.question_type === 'dropdown') {
+                const correct = String(key?.correct_option ?? '')
+                const opt = qOptions.find(o => o.option_key === correct)
+                answer = correct ? `${correct}${opt?.option_text ? `. ${opt.option_text}` : ''}` : answer
+              }
+              if (!answer && Array.isArray(scheme?.marking_points)) answer = scheme!.marking_points.map((p:any) => typeof p === 'string' ? p : p?.text ?? '').filter(Boolean).join('; ')
+              if (!answer && question.question_type === 'matching' && key) answer = Object.entries(key).map(([l,r]) => `${l} → ${String(r)}`).join('; ')
+              return <div className="answer-key-row" key={question.id}><strong>{question.question_number}</strong><span>{answer || '—'}</span><span>{question.marks}</span></div>
+            })}
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  if (reviewExam && teacherEditMode) {
     return (
       <main className="main">
         <header className="topbar">
@@ -1988,9 +2006,9 @@ export default function Exams() {
         <button
           className="secondary"
           type="button"
-          onClick={() => setReviewExam(null)}
+          onClick={() => setTeacherEditMode(false)}
         >
-          ← Back to Exams
+          ← View exam
         </button>
 
         {message && <p className="admin-message admin-message-success">{message}</p>}
@@ -2018,23 +2036,6 @@ export default function Exams() {
                   setReviewExam({
                     ...reviewExam,
                     title: event.target.value,
-                  })
-                }
-              />
-            </label>
-
-            <label>
-              <span>Duration (minutes)</span>
-              <input
-                type="number"
-                min="1"
-                value={reviewExam.duration_minutes ?? ''}
-                onChange={(event) =>
-                  setReviewExam({
-                    ...reviewExam,
-                    duration_minutes: event.target.value
-                      ? Number(event.target.value)
-                      : null,
                   })
                 }
               />
@@ -2650,9 +2651,7 @@ export default function Exams() {
                     <strong>{exam.title}</strong>
                     <p>
                       {exam.total_marks} marks
-                      {exam.duration_minutes
-                        ? ` · ${exam.duration_minutes} minutes`
-                        : ''}
+                      
                     </p>
                   </div>
 
