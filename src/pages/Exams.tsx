@@ -2099,9 +2099,9 @@ export default function Exams() {
         <section className="panel exam-review-header">
           <div className="panel-heading">
             <div>
-              <h3>Review reproduced exam</h3>
+              <h3>Exam preview</h3>
               <p>
-                Check every question against the original paper before publishing.
+                Create and review your questions before publishing.
               </p>
             </div>
             <span className={`assignment-status ${reviewExam.status}`}>
@@ -2146,9 +2146,6 @@ export default function Exams() {
               )}{' '}
               marks
             </span>
-            <button className="secondary" type="button" onClick={() => void addQuestion(null)}>
-              + Add question
-            </button>
             <button
               className="primary"
               type="button"
@@ -2475,29 +2472,7 @@ export default function Exams() {
                     </div>
                   )}
 
-                  {(question.question_type === 'short_answer' ||
-                    question.question_type === 'long_answer' ||
-                    question.question_type === 'structured') && (
-                    <div className="exam-options-review">
-                      <strong>Mark scheme</strong>
-                      <label>
-                        <span>Expected / model answer</span>
-                        <textarea
-                          rows={question.question_type === 'short_answer' ? 2 : 5}
-                          value={questionMarkScheme?.expected_answer ?? ''}
-                          onChange={(event) => updateMarkSchemeLocal(question.id, { expected_answer: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        <span>Marking points — one per line</span>
-                        <textarea
-                          rows={4}
-                          value={Array.isArray(questionMarkScheme?.marking_points) ? questionMarkScheme!.marking_points.map((p: any) => typeof p === 'string' ? p : p?.text ?? '').filter(Boolean).join('\n') : ''}
-                          onChange={(event) => updateMarkSchemeLocal(question.id, { marking_points: event.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })}
-                        />
-                      </label>
-                    </div>
-                  )}
+
 
                   <div className="exam-question-review-actions">
                     <button type="button" className="secondary" onClick={() => void moveQuestion(question, -1)}>↑ Move</button>
@@ -2517,6 +2492,11 @@ export default function Exams() {
                       {savingQuestionId === question.id
                         ? 'Saving…'
                         : 'Save question'}
+                    </button>
+                  </div>
+                  <div className="exam-add-after-question">
+                    <button className="secondary" type="button" onClick={() => void addQuestion(null)}>
+                      + Add question
                     </button>
                   </div>
                 </article>
