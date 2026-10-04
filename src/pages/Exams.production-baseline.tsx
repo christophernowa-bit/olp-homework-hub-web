@@ -54,7 +54,6 @@ type ExamAttemptRow = {
   submitted_at: string | null
   final_mark: number | null
   returned_at: string | null
-  deadline_at: string | null
 }
 
 type QuestionType =
@@ -83,33 +82,22 @@ type OptionRow = {
   id: string
   question_id: string
   option_order: number
-  option_key: string
+  option_key: string | null
   option_text: string
 }
 
-type MatchingItemRow = {
+type MatchingPairRow = {
   id: string
   question_id: string
-  side: 'left' | 'right'
-  item_order: number
-  item_key: string
-  item_text: string
-}
-
-type StudentVisual = { url: string; kind: 'image' | 'source_pdf'; source_page: number }
-
-type MarkSchemeRow = {
-  id: string
-  question_id: string
-  max_marks: number
-  expected_answer: string | null
-  acceptable_answers: unknown[]
-  answer_key: Record<string, unknown>
-  marking_points: unknown[]
-  rubric: Record<string, unknown>
-  ai_instructions: string | null
-  source_text: string | null
-  created_by: string
+  pair_order?: number
+  left_key?: string | null
+  left_text: string
+  right_key?: string | null
+  right_text: string
+  side?: 'left' | 'right' | string
+  item_order?: number
+  item_key?: string
+  item_text?: string
 }
 
 type ImportStatus =
@@ -208,8 +196,7 @@ export default function Exams() {
   const [reviewExam, setReviewExam] = useState<ExamRow | null>(null)
   const [questions, setQuestions] = useState<QuestionRow[]>([])
   const [options, setOptions] = useState<OptionRow[]>([])
-  const [matchingItems, setMatchingItems] = useState<MatchingItemRow[]>([])
-  const [markSchemes, setMarkSchemes] = useState<MarkSchemeRow[]>([])
+  const [pairs, setPairs] = useState<MatchingPairRow[]>([])
   const [reviewLoading, setReviewLoading] = useState(false)
   const [savingQuestionId, setSavingQuestionId] = useState<string | null>(null)
   const [publishingExam, setPublishingExam] = useState(false)
@@ -224,11 +211,6 @@ export default function Exams() {
   const [studentSavingQuestionId, setStudentSavingQuestionId] = useState<string | null>(null)
   const [studentSubmitting, setStudentSubmitting] = useState(false)
   const [studentSecondsLeft, setStudentSecondsLeft] = useState<number | null>(null)
-  const [studentVisuals, setStudentVisuals] = useState<Record<string, StudentVisual>>({})
-  const [studentVisualErrors, setStudentVisualErrors] = useState<Record<string, string>>({})
-  const submitGuardRef = useRef(false)
-  const studentTextTimersRef = useRef<Record<string, number>>({})
-  const studentPendingTextRef = useRef<Record<string, { question: QuestionRow; text: string }>>({})
   const [sourcePaperUrl, setSourcePaperUrl] = useState('')
   const [sourcePaperMime, setSourcePaperMime] = useState('')
   const [questionDiagramUrls, setQuestionDiagramUrls] = useState<Record<string, string>>({})
@@ -262,20 +244,19 @@ export default function Exams() {
       setStudentSecondsLeft(null)
       return
     }
-    if (!studentAttempt.deadline_at) {
+    if (!studentRunnerExam.duration_minutes) {
       setStudentSecondsLeft(null)
       return
     }
 
-    const finishAt = new Date(studentAttempt.deadline_at).getTime()
+    const finishAt =
+      new Date(studentAttempt.started_at).getTime() +
+      studentRunnerExam.duration_minutes * 60 * 1000
 
     const tick = () => {
       const seconds = Math.max(0, Math.ceil((finishAt - Date.now()) / 1000))
       setStudentSecondsLeft(seconds)
-      if (seconds <= 0 && !submitGuardRef.current) {
-        submitGuardRef.current = true
-        void submitStudentExam(true)
-      }
+      if (seconds <= 0) void submitStudentExam(true)
     }
     tick()
     const timer = window.setInterval(tick, 1000)
@@ -300,7 +281,7 @@ export default function Exams() {
           .order('name'),
         supabase
           .from('exam_attempts')
-          .select('id,exam_id,student_id,status,started_at,submitted_at,final_mark,returned_at,deadline_at')
+          .select('id,exam_id,student_id,status,started_at,submitted_at,final_mark,returned_at')
           .eq('student_id', uid)
           .order('started_at', { ascending: false }),
       ])
@@ -368,25 +349,11 @@ export default function Exams() {
         const { data, error: attemptError } = await supabase
           .from('exam_attempts')
           .insert({ exam_id: exam.id, student_id: userId, status: 'in_progress' })
-          .select('id,exam_id,student_id,status,started_at,submitted_at,final_mark,returned_at,deadline_at')
+          .select('id,exam_id,student_id,status,started_at,submitted_at,final_mark,returned_at')
           .single()
-        if (attemptError) {
-          if (attemptError.code === '23505') {
-            const { data: existing, error: existingError } = await supabase
-              .from('exam_attempts')
-              .select('id,exam_id,student_id,status,started_at,submitted_at,final_mark,returned_at,deadline_at')
-              .eq('exam_id', exam.id)
-              .eq('student_id', userId)
-              .single()
-            if (existingError) throw existingError
-            attempt = existing as ExamAttemptRow
-          } else {
-            throw attemptError
-          }
-        } else {
-          attempt = data as ExamAttemptRow
-          setStudentAttempts((current) => [attempt as ExamAttemptRow, ...current])
-        }
+        if (attemptError) throw attemptError
+        attempt = data as ExamAttemptRow
+        setStudentAttempts((current) => [attempt as ExamAttemptRow, ...current])
       }
 
       if (attempt.status !== 'in_progress') {
@@ -410,7 +377,7 @@ export default function Exams() {
       const loadedQuestions = (questionResult.data ?? []) as QuestionRow[]
       const questionIds = loadedQuestions.map((question) => question.id)
       let loadedOptions: OptionRow[] = []
-      let loadedMatchingItems: MatchingItemRow[] = []
+      let loadedPairs: MatchingPairRow[] = []
 
       if (questionIds.length > 0) {
         const [optionResult, pairResult] = await Promise.all([
@@ -428,24 +395,8 @@ export default function Exams() {
         if (optionResult.error) throw optionResult.error
         if (pairResult.error) throw pairResult.error
         loadedOptions = (optionResult.data ?? []) as OptionRow[]
-        loadedMatchingItems = (pairResult.data ?? []) as MatchingItemRow[]
+        loadedPairs = (pairResult.data ?? []) as MatchingPairRow[]
       }
-
-      const visualEntries = await Promise.all(
-        loadedQuestions.map(async (question) => {
-          const needsVisual = Boolean(question.settings?.diagram_path || question.settings?.source_storage_path)
-          if (!needsVisual) return [question.id, null, ''] as const
-          const { data, error: visualError } = await supabase.functions.invoke('exam-visual', {
-            body: { question_id: question.id },
-          })
-          if (visualError || !data?.available || !data?.url) {
-            return [question.id, null, 'This visual could not be loaded securely.'] as const
-          }
-          return [question.id, { url: String(data.url), kind: data.kind === 'source_pdf' ? 'source_pdf' : 'image', source_page: Number(data.source_page ?? 1) } as StudentVisual, ''] as const
-        }),
-      )
-      setStudentVisuals(Object.fromEntries(visualEntries.filter(([, visual]) => Boolean(visual)).map(([id, visual]) => [id, visual as StudentVisual])))
-      setStudentVisualErrors(Object.fromEntries(visualEntries.filter(([, , err]) => Boolean(err)).map(([id, , err]) => [id, err])))
 
       const answerMap: Record<string, any> = {}
       for (const answer of answerResult.data ?? []) {
@@ -454,7 +405,7 @@ export default function Exams() {
 
       setQuestions(loadedQuestions)
       setOptions(loadedOptions)
-      setMatchingItems(loadedMatchingItems)
+      setPairs(loadedPairs)
       setStudentAnswers(answerMap)
       setStudentAttempt(attempt)
       setStudentRunnerExam(exam)
@@ -496,34 +447,6 @@ export default function Exams() {
     }
   }
 
-  function queueStudentTextSave(question: QuestionRow, text: string) {
-    setStudentAnswers((current) => ({
-      ...current,
-      [question.id]: { ...(current[question.id] ?? {}), answer_text: text },
-    }))
-    studentPendingTextRef.current[question.id] = { question, text }
-    const existingTimer = studentTextTimersRef.current[question.id]
-    if (existingTimer) window.clearTimeout(existingTimer)
-    studentTextTimersRef.current[question.id] = window.setTimeout(() => {
-      const pending = studentPendingTextRef.current[question.id]
-      delete studentPendingTextRef.current[question.id]
-      delete studentTextTimersRef.current[question.id]
-      if (pending) void saveStudentAnswer(pending.question, { answer_text: pending.text })
-    }, 800)
-  }
-
-  async function flushStudentTextSaves(questionId?: string) {
-    const ids = questionId ? [questionId] : Object.keys(studentPendingTextRef.current)
-    for (const id of ids) {
-      const timer = studentTextTimersRef.current[id]
-      if (timer) window.clearTimeout(timer)
-      delete studentTextTimersRef.current[id]
-      const pending = studentPendingTextRef.current[id]
-      delete studentPendingTextRef.current[id]
-      if (pending) await saveStudentAnswer(pending.question, { answer_text: pending.text })
-    }
-  }
-
   function answerIsComplete(question: QuestionRow) {
     const answer = studentAnswers[question.id]
     if (!answer) return false
@@ -541,28 +464,26 @@ export default function Exams() {
     try {
       setStudentSubmitting(true)
       setError('')
-      submitGuardRef.current = true
-      await flushStudentTextSaves()
-      const { data: submittedAttempt, error: submitError } = await supabase
-        .rpc('submit_exam_attempt', { p_attempt_id: studentAttempt.id })
+      const submittedAt = new Date().toISOString()
+      const { error: submitError } = await supabase
+        .from('exam_attempts')
+        .update({ status: 'submitted', submitted_at: submittedAt, updated_at: submittedAt })
+        .eq('id', studentAttempt.id)
+        .eq('status', 'in_progress')
       if (submitError) throw submitError
-      const submitted = submittedAttempt as ExamAttemptRow
-      setStudentAttempt(submitted)
+      setStudentAttempt({ ...studentAttempt, status: 'submitted', submitted_at: submittedAt })
       await loadStudentWorkspace(userId)
       setStudentRunnerExam(null)
       setStudentAttempt(null)
       setQuestions([])
       setOptions([])
-      setMatchingItems([])
+      setPairs([])
       setStudentAnswers({})
-      setStudentVisuals({})
-      setStudentVisualErrors({})
       setMessage(auto ? 'Time ended. Your exam was submitted.' : 'Exam submitted successfully.')
     } catch (err) {
       setError(errorMessage(err, 'Could not submit this exam.'))
     } finally {
       setStudentSubmitting(false)
-      if (studentAttempt?.status === 'in_progress') submitGuardRef.current = false
     }
   }
 
@@ -827,7 +748,7 @@ export default function Exams() {
       const questionIds = loadedQuestions.map((question) => question.id)
 
       let loadedOptions: OptionRow[] = []
-      let loadedMatchingItems: MatchingItemRow[] = []
+      let loadedPairs: MatchingPairRow[] = []
 
       if (questionIds.length > 0) {
         const optionQuestionIds = loadedQuestions
@@ -864,10 +785,10 @@ export default function Exams() {
 
         if (matchingQuestionIds.length > 0) {
           const { data: pairData, error: pairError } = await supabase
-            .from('exam_matching_items')
-            .select('id,question_id,side,item_order,item_key,item_text')
+            .from('exam_matching_pairs')
+            .select('*')
             .in('question_id', matchingQuestionIds)
-            .order('item_order')
+            .order('pair_order')
 
           if (pairError) {
             console.error('Could not load matching pairs:', pairError)
@@ -878,24 +799,15 @@ export default function Exams() {
               )}`,
             )
           } else {
-            loadedMatchingItems = (pairData ?? []) as MatchingItemRow[]
+            loadedPairs = (pairData ?? []) as MatchingPairRow[]
           }
         }
       }
 
-      const { data: schemeData, error: schemeError } = questionIds.length
-        ? await supabase
-            .from('exam_mark_schemes')
-            .select('*')
-            .in('question_id', questionIds)
-        : { data: [], error: null }
-      if (schemeError) throw schemeError
-
       setReviewExam(loadedExam as ExamRow)
       setQuestions(loadedQuestions)
       setOptions(loadedOptions)
-      setMatchingItems(loadedMatchingItems)
-      setMarkSchemes((schemeData ?? []) as MarkSchemeRow[])
+      setPairs(loadedPairs)
 
       const diagramEntries = await Promise.all(
         loadedQuestions.map(async (question) => {
@@ -946,90 +858,15 @@ export default function Exams() {
     )
   }
 
-  function updateMatchingItemLocal(id: string, patch: Partial<MatchingItemRow>) {
-    setMatchingItems((current) =>
-      current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+  function updatePairLocal(
+    id: string,
+    patch: Partial<MatchingPairRow>,
+  ) {
+    setPairs((current) =>
+      current.map((pair) =>
+        pair.id === id ? { ...pair, ...patch } : pair,
+      ),
     )
-  }
-
-  function updateMarkSchemeLocal(questionId: string, patch: Partial<MarkSchemeRow>) {
-    setMarkSchemes((current) => {
-      const existing = current.find((scheme) => scheme.question_id === questionId)
-      if (existing) {
-        return current.map((scheme) =>
-          scheme.question_id === questionId ? { ...scheme, ...patch } : scheme,
-        )
-      }
-      return [
-        ...current,
-        {
-          id: '',
-          question_id: questionId,
-          max_marks: Number(questions.find((q) => q.id === questionId)?.marks ?? 0),
-          expected_answer: null,
-          acceptable_answers: [],
-          answer_key: {},
-          marking_points: [],
-          rubric: {},
-          ai_instructions: null,
-          source_text: null,
-          created_by: userId,
-          ...patch,
-        },
-      ]
-    })
-  }
-
-  async function insertOption(question: QuestionRow) {
-    const existing = options.filter((item) => item.question_id === question.id)
-    const key = String.fromCharCode(65 + existing.length)
-    const { data, error: insertError } = await supabase
-      .from('exam_question_options')
-      .insert({
-        question_id: question.id,
-        option_order: existing.length + 1,
-        option_key: key,
-        option_text: `Option ${key}`,
-      })
-      .select('id,question_id,option_order,option_key,option_text')
-      .single()
-    if (insertError) throw insertError
-    setOptions((current) => [...current, data as OptionRow])
-  }
-
-  async function deleteOption(option: OptionRow) {
-    const { error: deleteError } = await supabase
-      .from('exam_question_options')
-      .delete()
-      .eq('id', option.id)
-    if (deleteError) throw deleteError
-    setOptions((current) => current.filter((item) => item.id !== option.id))
-  }
-
-  async function addMatchingRow(question: QuestionRow) {
-    const left = matchingItems.filter((i) => i.question_id === question.id && i.side === 'left')
-    const right = matchingItems.filter((i) => i.question_id === question.id && i.side === 'right')
-    const order = Math.max(left.length, right.length) + 1
-    const leftKey = `L${order}`
-    const rightKey = `R${order}`
-    const { data, error: insertError } = await supabase
-      .from('exam_matching_items')
-      .insert([
-        { question_id: question.id, side: 'left', item_order: order, item_key: leftKey, item_text: `Left item ${order}` },
-        { question_id: question.id, side: 'right', item_order: order, item_key: rightKey, item_text: `Right item ${order}` },
-      ])
-      .select('id,question_id,side,item_order,item_key,item_text')
-    if (insertError) throw insertError
-    setMatchingItems((current) => [...current, ...((data ?? []) as MatchingItemRow[])])
-    const scheme = markSchemes.find((m) => m.question_id === question.id)
-    const answerKey = { ...((scheme?.answer_key ?? {}) as Record<string, unknown>), [leftKey]: rightKey }
-    updateMarkSchemeLocal(question.id, { answer_key: answerKey })
-  }
-
-  async function deleteMatchingItem(item: MatchingItemRow) {
-    const { error: deleteError } = await supabase.from('exam_matching_items').delete().eq('id', item.id)
-    if (deleteError) throw deleteError
-    setMatchingItems((current) => current.filter((x) => x.id !== item.id))
   }
 
   function insertMathSymbol(question: QuestionRow, symbol: string) {
@@ -1153,129 +990,6 @@ export default function Exams() {
     }
   }
 
-  async function addQuestion(parentQuestionId: string | null = null) {
-    if (!reviewExam) return
-    try {
-      setError('')
-      const nextOrder = questions.reduce((max, q) => Math.max(max, Number(q.sort_order) || 0), 0) + 1
-      const parent = parentQuestionId ? questions.find((q) => q.id === parentQuestionId) : null
-      const nextNumber = parent ? `${parent.question_number}(${questions.filter((q) => q.parent_question_id === parent.id).length + 1})` : String(questions.filter((q) => !q.parent_question_id).length + 1)
-      const { data, error: insertError } = await supabase
-        .from('exam_questions')
-        .insert({
-          exam_id: reviewExam.id,
-          parent_question_id: parentQuestionId,
-          question_number: nextNumber,
-          sort_order: nextOrder,
-          question_type: 'short_answer',
-          question_text: '',
-          marks: 1,
-          required: true,
-          settings: {},
-          content_json: { type: 'doc', version: 1, blocks: [] },
-        })
-        .select('*')
-        .single()
-      if (insertError) throw insertError
-      setQuestions((current) => [...current, data as QuestionRow].sort((a, b) => a.sort_order - b.sort_order))
-      setMessage(parent ? `Subquestion added under ${parent.question_number}.` : 'Question added.')
-    } catch (err) {
-      setError(errorMessage(err, 'Could not add question.'))
-    }
-  }
-
-  async function deleteQuestion(question: QuestionRow) {
-    if (!window.confirm(`Delete question ${question.question_number}? Its options, matching items and mark scheme will also be removed.`)) return
-    try {
-      const { error: deleteError } = await supabase.from('exam_questions').delete().eq('id', question.id)
-      if (deleteError) throw deleteError
-      const removedIds = new Set([question.id, ...questions.filter((q) => q.parent_question_id === question.id).map((q) => q.id)])
-      setQuestions((current) => current.filter((q) => !removedIds.has(q.id)))
-      setOptions((current) => current.filter((o) => !removedIds.has(o.question_id)))
-      setMatchingItems((current) => current.filter((i) => !removedIds.has(i.question_id)))
-      setMarkSchemes((current) => current.filter((m) => !removedIds.has(m.question_id)))
-      setMessage(`Question ${question.question_number} deleted.`)
-    } catch (err) {
-      setError(errorMessage(err, 'Could not delete question.'))
-    }
-  }
-
-  async function moveQuestion(question: QuestionRow, direction: -1 | 1) {
-    const ordered = [...questions].sort((a, b) => a.sort_order - b.sort_order)
-    const index = ordered.findIndex((q) => q.id === question.id)
-    const swap = ordered[index + direction]
-    if (index < 0 || !swap) return
-    try {
-      const aOrder = question.sort_order
-      const bOrder = swap.sort_order
-      const [a, b] = await Promise.all([
-        supabase.from('exam_questions').update({ sort_order: bOrder }).eq('id', question.id),
-        supabase.from('exam_questions').update({ sort_order: aOrder }).eq('id', swap.id),
-      ])
-      if (a.error) throw a.error
-      if (b.error) throw b.error
-      setQuestions((current) => current.map((q) => q.id === question.id ? { ...q, sort_order: bOrder } : q.id === swap.id ? { ...q, sort_order: aOrder } : q).sort((x, y) => x.sort_order - y.sort_order))
-    } catch (err) {
-      setError(errorMessage(err, 'Could not reorder questions.'))
-    }
-  }
-
-  async function duplicateQuestion(question: QuestionRow) {
-    if (!reviewExam) return
-    try {
-      const nextOrder = questions.reduce((max, q) => Math.max(max, Number(q.sort_order) || 0), 0) + 1
-      const { data: copy, error: copyError } = await supabase.from('exam_questions').insert({
-        exam_id: reviewExam.id,
-        parent_question_id: question.parent_question_id,
-        question_number: `${question.question_number} copy`,
-        sort_order: nextOrder,
-        question_type: question.question_type,
-        question_text: question.question_text,
-        marks: question.marks,
-        required: question.required,
-        source_ref: question.source_ref,
-        settings: question.settings,
-        content_json: { type: 'doc', version: 1, blocks: question.question_text ? [{ id: crypto.randomUUID(), type: 'paragraph', text: question.question_text }] : [] },
-      }).select('*').single()
-      if (copyError) throw copyError
-      const copied = copy as QuestionRow
-
-      const sourceOptions = options.filter((o) => o.question_id === question.id)
-      if (sourceOptions.length) {
-        const { data, error } = await supabase.from('exam_question_options').insert(sourceOptions.map((o) => ({ question_id: copied.id, option_order: o.option_order, option_key: o.option_key, option_text: o.option_text }))).select('*')
-        if (error) throw error
-        setOptions((current) => [...current, ...((data ?? []) as OptionRow[])])
-      }
-      const sourceItems = matchingItems.filter((i) => i.question_id === question.id)
-      if (sourceItems.length) {
-        const { data, error } = await supabase.from('exam_matching_items').insert(sourceItems.map((i) => ({ question_id: copied.id, side: i.side, item_order: i.item_order, item_key: i.item_key, item_text: i.item_text }))).select('*')
-        if (error) throw error
-        setMatchingItems((current) => [...current, ...((data ?? []) as MatchingItemRow[])])
-      }
-      const scheme = markSchemes.find((m) => m.question_id === question.id)
-      if (scheme) {
-        const { data, error } = await supabase.from('exam_mark_schemes').insert({ question_id: copied.id, max_marks: scheme.max_marks, expected_answer: scheme.expected_answer, acceptable_answers: scheme.acceptable_answers, answer_key: scheme.answer_key, marking_points: scheme.marking_points, rubric: scheme.rubric, ai_instructions: scheme.ai_instructions, source_text: scheme.source_text, created_by: userId }).select('*').single()
-        if (error) throw error
-        setMarkSchemes((current) => [...current, data as MarkSchemeRow])
-      }
-      setQuestions((current) => [...current, copied].sort((a, b) => a.sort_order - b.sort_order))
-      setMessage(`Question ${question.question_number} duplicated.`)
-    } catch (err) {
-      setError(errorMessage(err, 'Could not duplicate question.'))
-    }
-  }
-
-  function moveOptionLocal(questionId: string, optionId: string, direction: -1 | 1) {
-    setOptions((current) => {
-      const group = current.filter((o) => o.question_id === questionId).sort((a, b) => a.option_order - b.option_order)
-      const index = group.findIndex((o) => o.id === optionId)
-      const swap = group[index + direction]
-      if (index < 0 || !swap) return current
-      const selected = group[index]
-      return current.map((o) => o.id === selected.id ? { ...o, option_order: swap.option_order } : o.id === swap.id ? { ...o, option_order: selected.option_order } : o)
-    })
-  }
-
   async function saveQuestion(question: QuestionRow) {
     try {
       setSavingQuestionId(question.id)
@@ -1287,7 +1001,6 @@ export default function Exams() {
         .update({
           question_number: question.question_number.trim(),
           question_type: question.question_type,
-          parent_question_id: question.parent_question_id,
           question_text: question.question_text?.trim() || null,
           marks: Number(question.marks) || 0,
           required: question.required,
@@ -1319,7 +1032,6 @@ export default function Exams() {
         const { error: optionError } = await supabase
           .from('exam_question_options')
           .update({
-            option_order: option.option_order,
             option_key: option.option_key,
             option_text: option.option_text.trim(),
           })
@@ -1328,42 +1040,22 @@ export default function Exams() {
         if (optionError) throw optionError
       }
 
-      const questionMatchingItems = matchingItems.filter(
-        (item) => item.question_id === question.id,
+      const questionPairs = pairs.filter(
+        (pair) => pair.question_id === question.id,
       )
 
-      for (const item of questionMatchingItems) {
-        const { error: itemError } = await supabase
-          .from('exam_matching_items')
+      for (const pair of questionPairs) {
+        const { error: pairError } = await supabase
+          .from('exam_matching_pairs')
           .update({
-            side: item.side,
-            item_order: item.item_order,
-            item_key: item.item_key,
-            item_text: item.item_text.trim(),
+            left_key: pair.left_key,
+            left_text: pair.left_text.trim(),
+            right_key: pair.right_key,
+            right_text: pair.right_text.trim(),
           })
-          .eq('id', item.id)
-        if (itemError) throw itemError
-      }
+          .eq('id', pair.id)
 
-      const scheme = markSchemes.find((item) => item.question_id === question.id)
-      if (scheme) {
-        const payload = {
-          question_id: question.id,
-          max_marks: Number(question.marks) || 0,
-          expected_answer: scheme.expected_answer?.trim() || null,
-          acceptable_answers: scheme.acceptable_answers ?? [],
-          answer_key: scheme.answer_key ?? {},
-          marking_points: scheme.marking_points ?? [],
-          rubric: scheme.rubric ?? {},
-          ai_instructions: scheme.ai_instructions?.trim() || null,
-          source_text: scheme.source_text?.trim() || null,
-          created_by: userId,
-          updated_at: new Date().toISOString(),
-        }
-        const { error: schemeSaveError } = await supabase
-          .from('exam_mark_schemes')
-          .upsert(payload, { onConflict: 'question_id' })
-        if (schemeSaveError) throw schemeSaveError
+        if (pairError) throw pairError
       }
 
       setMessage(`Question ${question.question_number} saved.`)
@@ -1456,31 +1148,12 @@ export default function Exams() {
     const missingPairs = questions.filter(
       (question) =>
         question.question_type === 'matching' &&
-        matchingItems.filter((item) => item.question_id === question.id).length < 2,
+        pairs.filter((pair) => pair.question_id === question.id).length === 0,
     )
     if (missingPairs.length > 0) {
       problems.push(
         `${missingPairs.length} matching question${missingPairs.length === 1 ? '' : 's'} need matching items.`,
       )
-    }
-
-    const missingCorrectAnswers = questions.filter((question) => {
-      if (question.question_type !== 'multiple_choice' && question.question_type !== 'dropdown') return false
-      const scheme = markSchemes.find((item) => item.question_id === question.id)
-      return !String(scheme?.answer_key?.correct_option ?? '').trim()
-    })
-    if (missingCorrectAnswers.length > 0) {
-      problems.push(`${missingCorrectAnswers.length} choice question${missingCorrectAnswers.length === 1 ? '' : 's'} need a correct answer.`)
-    }
-
-    const incompleteMatching = questions.filter((question) => {
-      if (question.question_type !== 'matching') return false
-      const lefts = matchingItems.filter((item) => item.question_id === question.id && item.side === 'left')
-      const scheme = markSchemes.find((item) => item.question_id === question.id)
-      return lefts.length === 0 || lefts.some((left) => !String(scheme?.answer_key?.[left.item_key] ?? '').trim())
-    })
-    if (incompleteMatching.length > 0) {
-      problems.push(`${incompleteMatching.length} matching question${incompleteMatching.length === 1 ? '' : 's'} need every left item mapped to a correct right item.`)
     }
 
     return problems
@@ -1644,13 +1317,13 @@ export default function Exams() {
             {questions.map((question) => {
               const answer = studentAnswers[question.id] ?? {}
               const questionOptions = options.filter((item) => item.question_id === question.id)
-              const questionMatchingItems = matchingItems.filter((item) => item.question_id === question.id)
+              const questionPairs = pairs.filter((item) => item.question_id === question.id)
               const matchingResponse = Array.isArray(answer.matching_response)
                 ? answer.matching_response
                 : []
 
               return (
-                <article className="panel exam-question-review-card" key={question.id} style={question.parent_question_id ? { marginLeft: '28px', borderLeft: '4px solid #dce2ea' } : undefined}>
+                <article className="panel exam-question-review-card" key={question.id}>
                   <div className="panel-heading">
                     <div>
                       <p className="eyebrow">{questionLabels[question.question_type]}</p>
@@ -1661,34 +1334,22 @@ export default function Exams() {
 
                   <p style={{ whiteSpace: 'pre-wrap' }}>{question.question_text}</p>
 
-                  {studentVisuals[question.id]?.kind === 'image' && (
-                    <img
-                      src={studentVisuals[question.id].url}
-                      alt={`Visual for question ${question.question_number}`}
-                      style={{ display: 'block', width: '100%', maxWidth: '760px', maxHeight: '520px', objectFit: 'contain', border: '1px solid #dce2ea', borderRadius: '8px', background: '#fff', margin: '12px 0' }}
-                    />
-                  )}
-                  {studentVisuals[question.id]?.kind === 'source_pdf' && (
-                    <iframe
-                      title={`Source visual for question ${question.question_number}`}
-                      src={`${studentVisuals[question.id].url}#page=${studentVisuals[question.id].source_page}&view=FitH`}
-                      style={{ width: '100%', height: '520px', border: '1px solid #dce2ea', borderRadius: '8px', margin: '12px 0' }}
-                    />
-                  )}
-                  {studentVisualErrors[question.id] && (
-                    <p className="admin-message admin-message-error">{studentVisualErrors[question.id]}</p>
-                  )}
-
                   {(question.question_type === 'short_answer' ||
                     question.question_type === 'long_answer' ||
-                    question.question_type === 'structured') &&
-                    !questions.some((child) => child.parent_question_id === question.id) && (
+                    question.question_type === 'structured') && (
                     <textarea
                       rows={question.question_type === 'short_answer' ? 3 : 7}
                       value={answer.answer_text ?? ''}
                       placeholder="Type your answer here"
-                      onChange={(event) => queueStudentTextSave(question, event.target.value)}
-                      onBlur={() => void flushStudentTextSaves(question.id)}
+                      onChange={(event) =>
+                        setStudentAnswers((current) => ({
+                          ...current,
+                          [question.id]: { ...answer, answer_text: event.target.value },
+                        }))
+                      }
+                      onBlur={(event) =>
+                        void saveStudentAnswer(question, { answer_text: event.target.value })
+                      }
                     />
                   )}
 
@@ -1731,7 +1392,7 @@ export default function Exams() {
 
                   {question.question_type === 'matching' && (
                     <div className="exam-matching-review">
-                      {questionMatchingItems
+                      {questionPairs
                         .filter((item) => item.side === 'left')
                         .map((left) => {
                           const leftKey = left.item_key ?? ''
@@ -1739,20 +1400,11 @@ export default function Exams() {
                             matchingResponse.find(
                               (item: any) => item?.left_key === leftKey,
                             )?.right_key ?? ''
-                          const rightItems = questionMatchingItems.filter(
+                          const rightItems = questionPairs.filter(
                             (item) => item.side === 'right',
                           )
                           return (
-                            <label
-                              key={left.id}
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={(event) => {
-                                event.preventDefault()
-                                const rightKey = event.dataTransfer.getData('text/plain')
-                                if (rightKey) updateMatchingAnswer(question, leftKey, rightKey)
-                              }}
-                              style={{ padding: '8px', border: '1px dashed #cbd5e1', borderRadius: '8px' }}
-                            >
+                            <label key={left.id}>
                               <span>{left.item_text}</span>
                               <select
                                 value={selected}
@@ -1777,20 +1429,6 @@ export default function Exams() {
                             </label>
                           )
                         })}
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '12px' }}>
-                        {questionMatchingItems.filter((item) => item.side === 'right').map((right) => (
-                          <button
-                            key={right.id}
-                            type="button"
-                            draggable
-                            onDragStart={(event) => event.dataTransfer.setData('text/plain', right.item_key)}
-                            className="secondary"
-                            title="Drag this choice onto a left-hand item, or use the dropdown above."
-                          >
-                            {right.item_text}
-                          </button>
-                        ))}
-                      </div>
                     </div>
                   )}
 
@@ -2063,9 +1701,6 @@ export default function Exams() {
               )}{' '}
               marks
             </span>
-            <button className="secondary" type="button" onClick={() => void addQuestion(null)}>
-              + Add question
-            </button>
             <button
               className="primary"
               type="button"
@@ -2106,11 +1741,8 @@ export default function Exams() {
               const questionOptions = options.filter(
                 (option) => option.question_id === question.id,
               )
-              const questionMatchingItems = matchingItems.filter(
-                (item) => item.question_id === question.id,
-              )
-              const questionMarkScheme = markSchemes.find(
-                (scheme) => scheme.question_id === question.id,
+              const questionPairs = pairs.filter(
+                (pair) => pair.question_id === question.id,
               )
 
               return (
@@ -2161,24 +1793,6 @@ export default function Exams() {
                       />
                     </label>
                   </div>
-
-                  <label style={{ display: 'block', marginTop: '10px' }}>
-                    <span>Structured parent</span>
-                    <select
-                      value={question.parent_question_id ?? ''}
-                      onChange={(event) => updateQuestionLocal(question.id, { parent_question_id: event.target.value || null })}
-                    >
-                      <option value="">None — top-level question</option>
-                      {questions
-                        .filter((candidate) => candidate.id !== question.id && candidate.question_type === 'structured' && !candidate.parent_question_id)
-                        .map((candidate) => (
-                          <option key={candidate.id} value={candidate.id}>
-                            Question {candidate.question_number}: {(candidate.question_text ?? '').slice(0, 70)}
-                          </option>
-                        ))}
-                    </select>
-                    <small>Choose a structured parent to make this a subquestion such as 3(a) or 3(b)(i).</small>
-                  </label>
 
                   <label className="exam-question-text">
                     <span>Question wording</span>
@@ -2303,113 +1917,56 @@ export default function Exams() {
                     )}
 
                   {(question.question_type === 'multiple_choice' ||
-                    question.question_type === 'dropdown') && (
-                    <div className="exam-options-review">
-                      <strong>{question.question_type === 'multiple_choice' ? 'Answer options' : 'Dropdown choices'}</strong>
-                      {questionOptions.map((option) => (
-                        <div key={option.id} style={{ display: 'grid', gridTemplateColumns: '52px 1fr auto', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
-                          <input value={option.option_key} onChange={(event) =>
-                            setOptions((current) => current.map((item) => item.id === option.id ? { ...item, option_key: event.target.value } : item))
-                          } />
-                          <input value={option.option_text} onChange={(event) => updateOptionLocal(option.id, event.target.value)} />
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            <button type="button" className="secondary" onClick={() => moveOptionLocal(question.id, option.id, -1)}>↑</button>
-                            <button type="button" className="secondary" onClick={() => moveOptionLocal(question.id, option.id, 1)}>↓</button>
-                            <button type="button" className="secondary" onClick={() => void deleteOption(option)}>Remove</button>
-                          </div>
-                        </div>
-                      ))}
-                      <button type="button" className="secondary" style={{ marginTop: '10px' }} onClick={() => void insertOption(question)}>
-                        + Add option
-                      </button>
-                      <label style={{ display: 'block', marginTop: '12px' }}>
-                        <span>Correct answer</span>
-                        <select
-                          value={String(questionMarkScheme?.answer_key?.correct_option ?? '')}
-                          onChange={(event) =>
-                            updateMarkSchemeLocal(question.id, {
-                              answer_key: { ...(questionMarkScheme?.answer_key ?? {}), correct_option: event.target.value },
-                            })
-                          }
-                        >
-                          <option value="">Choose correct answer</option>
-                          {questionOptions.map((option) => (
-                            <option key={option.id} value={option.option_key}>{option.option_key}. {option.option_text}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  )}
+                    question.question_type === 'dropdown') &&
+                    questionOptions.length > 0 && (
+                      <div className="exam-options-review">
+                        <strong>Extracted options</strong>
+                        {questionOptions.map((option) => (
+                          <label key={option.id}>
+                            <span>{option.option_key ?? '•'}</span>
+                            <input
+                              value={option.option_text}
+                              onChange={(event) =>
+                                updateOptionLocal(
+                                  option.id,
+                                  event.target.value,
+                                )
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    )}
 
-                  {question.question_type === 'matching' && (
-                    <div className="exam-matching-review">
-                      <strong>Matching / drag-and-drop pairs</strong>
-                      {questionMatchingItems.filter((i) => i.side === 'left').map((left) => {
-                        const rightKey = String(questionMarkScheme?.answer_key?.[left.item_key] ?? '')
-                        const rights = questionMatchingItems.filter((i) => i.side === 'right')
-                        return (
-                          <div key={left.id} style={{ display: 'grid', gridTemplateColumns: '1fr 34px 1fr auto', gap: '8px', alignItems: 'center', marginTop: '8px' }}>
-                            <input value={left.item_text} onChange={(event) => updateMatchingItemLocal(left.id, { item_text: event.target.value })} />
-                            <span>→</span>
-                            <select value={rightKey} onChange={(event) =>
-                              updateMarkSchemeLocal(question.id, {
-                                answer_key: { ...(questionMarkScheme?.answer_key ?? {}), [left.item_key]: event.target.value },
-                              })
-                            }>
-                              <option value="">Correct match</option>
-                              {rights.map((right) => <option key={right.id} value={right.item_key}>{right.item_text}</option>)}
-                            </select>
-                            <button type="button" className="secondary" onClick={() => void deleteMatchingItem(left)}>Remove</button>
-                          </div>
-                        )
-                      })}
-                      <div style={{ marginTop: '10px' }}>
-                        <strong>Right-side items</strong>
-                        {questionMatchingItems.filter((i) => i.side === 'right').map((right) => (
-                          <div key={right.id} style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
-                            <input style={{ flex: 1 }} value={right.item_text} onChange={(event) => updateMatchingItemLocal(right.id, { item_text: event.target.value })} />
-                            <button type="button" className="secondary" onClick={() => void deleteMatchingItem(right)}>Remove</button>
+                  {question.question_type === 'matching' &&
+                    questionPairs.length > 0 && (
+                      <div className="exam-matching-review">
+                        <strong>Extracted matching items</strong>
+                        {questionPairs.map((pair) => (
+                          <div key={pair.id}>
+                            <input
+                              value={pair.left_text}
+                              onChange={(event) =>
+                                updatePairLocal(pair.id, {
+                                  left_text: event.target.value,
+                                })
+                              }
+                            />
+                            <span>↔</span>
+                            <input
+                              value={pair.right_text}
+                              onChange={(event) =>
+                                updatePairLocal(pair.id, {
+                                  right_text: event.target.value,
+                                })
+                              }
+                            />
                           </div>
                         ))}
                       </div>
-                      <button type="button" className="secondary" style={{ marginTop: '10px' }} onClick={() => void addMatchingRow(question)}>
-                        + Add matching pair
-                      </button>
-                    </div>
-                  )}
-
-                  {(question.question_type === 'short_answer' ||
-                    question.question_type === 'long_answer' ||
-                    question.question_type === 'structured') && (
-                    <div className="exam-options-review">
-                      <strong>Mark scheme</strong>
-                      <label>
-                        <span>Expected / model answer</span>
-                        <textarea
-                          rows={question.question_type === 'short_answer' ? 2 : 5}
-                          value={questionMarkScheme?.expected_answer ?? ''}
-                          onChange={(event) => updateMarkSchemeLocal(question.id, { expected_answer: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        <span>Marking points — one per line</span>
-                        <textarea
-                          rows={4}
-                          value={Array.isArray(questionMarkScheme?.marking_points) ? questionMarkScheme!.marking_points.map((p: any) => typeof p === 'string' ? p : p?.text ?? '').filter(Boolean).join('\n') : ''}
-                          onChange={(event) => updateMarkSchemeLocal(question.id, { marking_points: event.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })}
-                        />
-                      </label>
-                    </div>
-                  )}
+                    )}
 
                   <div className="exam-question-review-actions">
-                    <button type="button" className="secondary" onClick={() => void moveQuestion(question, -1)}>↑ Move</button>
-                    <button type="button" className="secondary" onClick={() => void moveQuestion(question, 1)}>↓ Move</button>
-                    <button type="button" className="secondary" onClick={() => void duplicateQuestion(question)}>Duplicate</button>
-                    {question.question_type === 'structured' && !question.parent_question_id && (
-                      <button type="button" className="secondary" onClick={() => void addQuestion(question.id)}>+ Subquestion</button>
-                    )}
-                    <button type="button" className="secondary" onClick={() => void deleteQuestion(question)}>Delete</button>
                     <button
                       className="primary"
                       type="button"
