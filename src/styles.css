@@ -3053,3 +3053,6 @@
 .exam-manual-table td { border: 1px solid #cbd5e1; padding: 9px 10px; min-width: 90px; vertical-align: top; }
 .exam-manual-table-editor td { padding: 4px; }
 .exam-manual-table-editor input { width: 100%; min-width: 90px; border: 0; padding: 7px 8px; background: transparent; }
+
+/* v10.1 focused creator layout correction */
+.exam-add-after-question { display: flex; justify-content: flex-start; margin-top: 12px; padding-top: 10px; border-top: 1px solid #e5e7eb; }
