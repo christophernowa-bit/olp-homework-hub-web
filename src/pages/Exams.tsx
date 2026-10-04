@@ -237,6 +237,8 @@ export default function Exams() {
   const [sourcePaperMime, setSourcePaperMime] = useState('')
   const [questionDiagramUrls, setQuestionDiagramUrls] = useState<Record<string, string>>({})
   const [diagramBusyId, setDiagramBusyId] = useState<string | null>(null)
+  const [markingKeyFile, setMarkingKeyFile] = useState<File | null>(null)
+  const [markingKeyBusy, setMarkingKeyBusy] = useState(false)
   const questionTextRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -1467,6 +1469,73 @@ export default function Exams() {
     }
   }
 
+  async function uploadWholePaperMarkingKey() {
+    if (!reviewExam || !markingKeyFile) return
+    try {
+      setMarkingKeyBusy(true)
+      setError('')
+      setMessage('')
+      const safeName = markingKeyFile.name.replace(/[^a-zA-Z0-9._-]+/g, '-')
+      const storagePath = `${reviewExam.id}/${crypto.randomUUID()}-${safeName}`
+      const { error: uploadError } = await supabase.storage.from('exam-marking-keys').upload(storagePath, markingKeyFile, {
+        contentType: markingKeyFile.type || undefined, upsert: false,
+      })
+      if (uploadError) throw uploadError
+      const oldPath = String((reviewExam as any).marking_key_path ?? '')
+      const { data: updated, error: updateError } = await supabase.from('exams').update({
+        marking_key_path: storagePath,
+        marking_key_name: markingKeyFile.name,
+        marking_key_mime_type: markingKeyFile.type || null,
+      }).eq('id', reviewExam.id).select('*').single()
+      if (updateError) {
+        await supabase.storage.from('exam-marking-keys').remove([storagePath])
+        throw updateError
+      }
+      if (oldPath && oldPath !== storagePath) await supabase.storage.from('exam-marking-keys').remove([oldPath])
+      setReviewExam(updated as ExamRow)
+      setExams((current) => current.map((exam) => exam.id === updated.id ? (updated as ExamRow) : exam))
+      setMarkingKeyFile(null)
+      setMessage('Whole-paper marking key attached successfully.')
+    } catch (err) {
+      setError(errorMessage(err, 'Could not attach the marking key.'))
+    } finally { setMarkingKeyBusy(false) }
+  }
+
+  async function openWholePaperMarkingKey() {
+    const path = String((reviewExam as any)?.marking_key_path ?? '')
+    if (!path) return
+    try {
+      setMarkingKeyBusy(true)
+      setError('')
+      const { data, error: signedError } = await supabase.storage.from('exam-marking-keys').createSignedUrl(path, 300)
+      if (signedError) throw signedError
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      setError(errorMessage(err, 'Could not open the marking key.'))
+    } finally { setMarkingKeyBusy(false) }
+  }
+
+  async function removeWholePaperMarkingKey() {
+    if (!reviewExam) return
+    const path = String((reviewExam as any).marking_key_path ?? '')
+    if (!path || !window.confirm('Remove the whole-paper marking key from this exam?')) return
+    try {
+      setMarkingKeyBusy(true)
+      setError('')
+      const { error: storageError } = await supabase.storage.from('exam-marking-keys').remove([path])
+      if (storageError) throw storageError
+      const { data: updated, error: updateError } = await supabase.from('exams').update({
+        marking_key_path: null, marking_key_name: null, marking_key_mime_type: null,
+      }).eq('id', reviewExam.id).select('*').single()
+      if (updateError) throw updateError
+      setReviewExam(updated as ExamRow)
+      setExams((current) => current.map((exam) => exam.id === updated.id ? (updated as ExamRow) : exam))
+      setMessage('Marking key removed.')
+    } catch (err) {
+      setError(errorMessage(err, 'Could not remove the marking key.'))
+    } finally { setMarkingKeyBusy(false) }
+  }
+
   function validateExamForPublish() {
     if (!reviewExam) return ['No exam is open.']
 
@@ -2504,6 +2573,44 @@ export default function Exams() {
             })}
           </section>
         )}
+
+        <section className="panel exam-whole-marking-key">
+          <div className="panel-heading">
+            <div>
+              <p className="eyebrow">WHOLE-PAPER MARKING KEY</p>
+              <h3>Marking Key for AI Marking</h3>
+              <p>Attach one complete marking key after building the paper. It stays private to teachers/platform owners and will be the authority for AI-assisted marking.</p>
+            </div>
+          </div>
+
+          {(reviewExam as any).marking_key_path ? (
+            <div className="exam-marking-key-file">
+              <div><strong>{String((reviewExam as any).marking_key_name || 'Attached marking key')}</strong><p className="muted">One marking key is attached to this paper.</p></div>
+              <div className="exam-marking-key-actions">
+                <button className="secondary" type="button" disabled={markingKeyBusy} onClick={() => void openWholePaperMarkingKey()}>View key</button>
+                <label className="secondary exam-file-button">Replace key
+                  <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*" onChange={(e) => setMarkingKeyFile(e.target.files?.[0] ?? null)} disabled={markingKeyBusy} />
+                </label>
+                <button className="secondary" type="button" disabled={markingKeyBusy} onClick={() => void removeWholePaperMarkingKey()}>Remove</button>
+              </div>
+            </div>
+          ) : (
+            <label className="exam-marking-key-drop">
+              <strong>+ Add Marking Key</strong>
+              <span>PDF, Word document or image. One file per exam.</span>
+              <input type="file" accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*" onChange={(e) => setMarkingKeyFile(e.target.files?.[0] ?? null)} disabled={markingKeyBusy} />
+            </label>
+          )}
+
+          {markingKeyFile && (
+            <div className="exam-marking-key-selected">
+              <span>Selected: <strong>{markingKeyFile.name}</strong></span>
+              <button className="primary" type="button" disabled={markingKeyBusy} onClick={() => void uploadWholePaperMarkingKey()}>
+                {markingKeyBusy ? 'Uploading…' : ((reviewExam as any).marking_key_path ? 'Upload replacement' : 'Attach marking key')}
+              </button>
+            </div>
+          )}
+        </section>
       </main>
     )
   }
