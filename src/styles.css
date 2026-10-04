@@ -3036,3 +3036,14 @@
 .exam-paper-header{margin-bottom:14px}.exam-paper-questions{display:flex;flex-direction:column;gap:10px}.exam-paper-question{padding:16px 18px}.exam-paper-question-heading{display:flex;justify-content:space-between;gap:12px;margin-bottom:10px}.exam-paper-question-heading>strong{font-size:1rem}.exam-paper-question-heading>span{font-size:.72rem;color:#64748b}.exam-paper-diagram{display:block;max-width:100%;max-height:520px;object-fit:contain;margin:12px auto;border:1px solid #e2e8f0;border-radius:8px;background:#fff}.exam-paper-options{display:grid;gap:6px;margin-top:10px;padding-left:8px;color:#334155}.exam-answer-key{margin-top:20px}.answer-key-table{margin-top:12px;border:1px solid #e2e8f0;border-radius:9px;overflow:hidden}.answer-key-row{display:grid;grid-template-columns:100px minmax(0,1fr) 70px;gap:10px;padding:9px 11px;border-top:1px solid #edf1f5;align-items:start;font-size:.76rem}.answer-key-row:first-child{border-top:0}.answer-key-head{background:#f8fafc;color:#475569}.answer-key-row>span:last-child{text-align:right}.exam-review-meta{grid-template-columns:1fr}.exam-options-review label{grid-template-columns:minmax(120px,180px) minmax(0,1fr)}
 @media(max-width:650px){.answer-key-row{grid-template-columns:70px minmax(0,1fr) 48px}.exam-paper-question{padding:13px}.exam-options-review label{grid-template-columns:1fr}}
 .exam-subject-groups{display:grid;gap:16px}.exam-subject-group>h4{margin:0 0 8px;padding-bottom:7px;border-bottom:1px solid #e5eaf0;color:#334155;font-size:.8rem;letter-spacing:.04em;text-transform:uppercase}
+
+/* v9.1: consolidated marking editor */
+.exam-answer-key-editor { margin-top: 18px; }
+.answer-key-editor-list { display: grid; gap: 12px; }
+.answer-key-editor-item { border: 1px solid #e3e8ef; border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+.answer-key-editor-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.answer-key-editor-item label { display: grid; gap: 5px; }
+.answer-key-editor-item textarea, .answer-key-editor-item select { width: 100%; }
+.answer-key-matching { display: grid; gap: 8px; }
+.answer-key-match-row { display: grid; grid-template-columns: minmax(120px, 1fr) 24px minmax(160px, 1fr); gap: 8px; align-items: center; }
+@media (max-width: 720px) { .answer-key-match-row { grid-template-columns: 1fr; } }
