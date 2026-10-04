@@ -3047,3 +3047,9 @@
 .answer-key-matching { display: grid; gap: 8px; }
 .answer-key-match-row { display: grid; grid-template-columns: minmax(120px, 1fr) 24px minmax(160px, 1fr); gap: 8px; align-items: center; }
 @media (max-width: 720px) { .answer-key-match-row { grid-template-columns: 1fr; } }
+
+/* v10 manual exam creator */
+.exam-manual-table { width: 100%; border-collapse: collapse; background: #fff; }
+.exam-manual-table td { border: 1px solid #cbd5e1; padding: 9px 10px; min-width: 90px; vertical-align: top; }
+.exam-manual-table-editor td { padding: 4px; }
+.exam-manual-table-editor input { width: 100%; min-width: 90px; border: 0; padding: 7px 8px; background: transparent; }

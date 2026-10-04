@@ -195,7 +195,10 @@ export default function Exams() {
   const [imports, setImports] = useState<ImportRow[]>([])
   const [selectedClassId, setSelectedClassId] = useState('')
   const [selectedSubjectId, setSelectedSubjectId] = useState('')
-  const [showImporter, setShowImporter] = useState(false)
+  const [showCreator, setShowCreator] = useState(false)
+  const [creatorTitle, setCreatorTitle] = useState('')
+  const [creatorInstructions, setCreatorInstructions] = useState('')
+  const [creatingExam, setCreatingExam] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [titleOverride, setTitleOverride] = useState('')
   const [durationOverride, setDurationOverride] = useState('')
@@ -586,7 +589,7 @@ export default function Exams() {
   }
 
   async function loadTeacherWorkspace(uid: string) {
-    const [classResult, subjectResult, examResult, importResult] =
+    const [classResult, subjectResult, examResult] =
       await Promise.all([
         supabase
           .from('classes')
@@ -603,18 +606,11 @@ export default function Exams() {
           .select('*')
           .eq('created_by', uid)
           .order('created_at', { ascending: false }),
-        supabase
-          .from('exam_imports')
-          .select('id,exam_id,class_id,subject_id,file_name,status,error_message,created_at')
-          .eq('uploaded_by', uid)
-          .order('created_at', { ascending: false })
-          .limit(10),
       ])
 
     if (classResult.error) throw classResult.error
     if (subjectResult.error) throw subjectResult.error
     if (examResult.error) throw examResult.error
-    if (importResult.error) throw importResult.error
 
     const loadedClasses = (classResult.data ?? []) as ClassRow[]
     const loadedSubjects = (subjectResult.data ?? []) as SubjectRow[]
@@ -622,7 +618,7 @@ export default function Exams() {
     setClasses(loadedClasses)
     setSubjects(loadedSubjects)
     setExams((examResult.data ?? []) as ExamRow[])
-    setImports((importResult.data ?? []) as ImportRow[])
+    setImports([])
 
     if (!selectedClassId && loadedClasses.length > 0) {
       const firstClass =
@@ -643,7 +639,6 @@ export default function Exams() {
 
   function resetImporter() {
     if (uploading) return
-    setShowImporter(false)
     setFile(null)
     setTitleOverride('')
     setDurationOverride('')
@@ -743,6 +738,51 @@ export default function Exams() {
       await loadTeacherWorkspace(userId).catch(() => undefined)
     } finally {
       setUploading(false)
+    }
+  }
+
+  async function createManualExam() {
+    if (!userId || !selectedClassId || !selectedSubjectId) {
+      setError('Choose a class and subject before creating an exam.')
+      return
+    }
+    if (!creatorTitle.trim()) {
+      setError('Enter an exam title.')
+      return
+    }
+    try {
+      setCreatingExam(true)
+      setError('')
+      setMessage('')
+      const { data: created, error: examError } = await supabase.from('exams').insert({
+        class_id: selectedClassId,
+        subject_id: selectedSubjectId,
+        created_by: userId,
+        title: creatorTitle.trim(),
+        instructions: creatorInstructions.trim() || null,
+        duration_minutes: null,
+        total_marks: 1,
+        status: 'draft',
+        source_type: 'manual',
+      }).select('*').single()
+      if (examError) throw examError
+      const { error: questionError } = await supabase.from('exam_questions').insert({
+        exam_id: created.id, parent_question_id: null, question_number: '1', sort_order: 1,
+        question_type: 'short_answer', question_text: '', marks: 1, required: true,
+        settings: {}, content_json: { type: 'doc', version: 1, blocks: [] },
+      })
+      if (questionError) throw questionError
+      setCreatorTitle('')
+      setCreatorInstructions('')
+      setShowCreator(false)
+      await loadTeacherWorkspace(userId)
+      await openExam(created.id)
+      setTeacherEditMode(true)
+      setMessage('Manual exam created. Build the questions, complete the marking key, preview, then publish.')
+    } catch (err) {
+      setError(errorMessage(err, 'Could not create the exam.'))
+    } finally {
+      setCreatingExam(false)
     }
   }
 
@@ -1131,6 +1171,40 @@ export default function Exams() {
     } finally {
       setDiagramBusyId(null)
     }
+  }
+
+  function questionTable(question: QuestionRow): string[][] {
+    const raw = question.settings?.table_data
+    if (!Array.isArray(raw)) return []
+    return raw.filter((row): row is unknown[] => Array.isArray(row)).map((row) => row.map((cell) => String(cell ?? '')))
+  }
+  function setQuestionTable(question: QuestionRow, table: string[][]) {
+    updateQuestionLocal(question.id, { settings: { ...(question.settings ?? {}), table_data: table } })
+  }
+  function addQuestionTable(question: QuestionRow) {
+    const current = questionTable(question)
+    setQuestionTable(question, current.length ? current : [['', ''], ['', '']])
+  }
+  function addTableRow(question: QuestionRow) {
+    const current = questionTable(question)
+    const columns = Math.max(1, current[0]?.length ?? 2)
+    setQuestionTable(question, [...current, Array(columns).fill('')])
+  }
+  function addTableColumn(question: QuestionRow) {
+    const current = questionTable(question)
+    const rows = current.length ? current : [[''], ['']]
+    setQuestionTable(question, rows.map((row) => [...row, '']))
+  }
+  function updateTableCell(question: QuestionRow, rowIndex: number, columnIndex: number, value: string) {
+    const next = questionTable(question).map((row) => [...row])
+    if (!next[rowIndex]) return
+    next[rowIndex][columnIndex] = value
+    setQuestionTable(question, next)
+  }
+  function removeQuestionTable(question: QuestionRow) {
+    const nextSettings = { ...(question.settings ?? {}) }
+    delete nextSettings.table_data
+    updateQuestionLocal(question.id, { settings: nextSettings })
   }
 
   async function addQuestion(parentQuestionId: string | null = null) {
@@ -1658,6 +1732,14 @@ export default function Exams() {
                     <p className="admin-message admin-message-error">{studentVisualErrors[question.id]}</p>
                   )}
 
+                  {questionTable(question).length > 0 && (
+                    <div style={{ overflowX: 'auto', margin: '12px 0' }}>
+                      <table className="exam-manual-table"><tbody>
+                        {questionTable(question).map((row, r) => <tr key={r}>{row.map((cell, c) => <td key={c}>{cell}</td>)}</tr>)}
+                      </tbody></table>
+                    </div>
+                  )}
+
                   {(question.question_type === 'short_answer' ||
                     question.question_type === 'long_answer' ||
                     question.question_type === 'structured') &&
@@ -1967,7 +2049,7 @@ export default function Exams() {
           })}
         </section>
         <section className="panel exam-answer-key">
-          <div className="panel-heading"><div><h3>Answer Key / Mark Scheme</h3><p>Teacher and platform-owner view only.</p></div></div>
+          <div className="panel-heading"><div><h3>Marking Key / Answer Key</h3><p>Teacher and platform-owner view only. This key is the authority for automatic and AI-assisted marking.</p></div></div>
           <div className="answer-key-table">
             <div className="answer-key-row answer-key-head"><strong>Question</strong><strong>Answer / marking guidance</strong><strong>Marks</strong></div>
             {questions.map((question) => {
@@ -2246,6 +2328,20 @@ export default function Exams() {
                       </div>
                     </div>
 
+                    <div style={{ marginTop: '10px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
+                        <strong style={{ fontSize: '.72rem', marginRight: '4px' }}>TABLE</strong>
+                        {questionTable(question).length === 0 ? <button type="button" className="secondary" onClick={() => addQuestionTable(question)}>+ Insert 2 × 2 table</button> : <>
+                          <button type="button" className="secondary" onClick={() => addTableRow(question)}>+ Row</button>
+                          <button type="button" className="secondary" onClick={() => addTableColumn(question)}>+ Column</button>
+                          <button type="button" className="secondary" onClick={() => removeQuestionTable(question)}>Remove table</button>
+                        </>}
+                      </div>
+                      {questionTable(question).length > 0 && <div style={{ overflowX: 'auto', marginTop: '8px' }}><table className="exam-manual-table exam-manual-table-editor"><tbody>
+                        {questionTable(question).map((row, r) => <tr key={r}>{row.map((cell, c) => <td key={c}><input value={cell} aria-label={`Table row ${r + 1} column ${c + 1}`} onChange={(e) => updateTableCell(question, r, c, e.target.value)} /></td>)}</tr>)}
+                      </tbody></table></div>}
+                    </div>
+
                     {questionDiagramUrls[question.id] && (
                       <div style={{ marginTop: '10px' }}>
                         <strong style={{ display: 'block', marginBottom: '6px', fontSize: '.72rem' }}>Attached diagram</strong>
@@ -2450,22 +2546,11 @@ export default function Exams() {
 
       <section className="welcome">
         <div>
-          <p className="eyebrow">EXAM STUDIO</p>
-          <h2>Import and reproduce an exam paper.</h2>
-          <p className="muted">
-            OLP extracts the original paper into an editable draft for you to
-            inspect before anything is published.
-          </p>
+          <p className="eyebrow">EXAM CREATOR</p>
+          <h2>Create an exam manually.</h2>
+          <p className="muted">Build Cambridge-style questions with text, diagrams, tables, maths symbols and a complete marking key for automatic and AI-assisted marking.</p>
         </div>
-
-        <button
-          className="primary"
-          type="button"
-          onClick={() => setShowImporter(true)}
-          disabled={!selectedSubjectId}
-        >
-          <Upload size={17} /> Import exam
-        </button>
+        <button className="primary" type="button" onClick={() => setShowCreator(true)} disabled={!selectedSubjectId}>+ Create Exam</button>
       </section>
 
       {message && <p className="admin-message admin-message-success">{message}</p>}
@@ -2474,132 +2559,25 @@ export default function Exams() {
       <section className="panel exam-browser-panel">
         <div className="assignment-smart-nav">
           <div className="assignment-class-tabs">
-            {classes.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={selectedClassId === item.id ? 'active' : ''}
-                onClick={() => chooseClass(item.id)}
-              >
-                {item.name}
-              </button>
-            ))}
+            {classes.map((item) => <button key={item.id} type="button" className={selectedClassId === item.id ? 'active' : ''} onClick={() => chooseClass(item.id)}>{item.name}</button>)}
           </div>
-
           <div className="assignment-subject-tabs">
-            {navigationSubjects.map((subject) => (
-              <button
-                key={subject.id}
-                type="button"
-                className={selectedSubjectId === subject.id ? 'active' : ''}
-                onClick={() => setSelectedSubjectId(subject.id)}
-              >
-                {subject.name}
-              </button>
-            ))}
+            {navigationSubjects.map((subject) => <button key={subject.id} type="button" className={selectedSubjectId === subject.id ? 'active' : ''} onClick={() => setSelectedSubjectId(subject.id)}>{subject.name}</button>)}
           </div>
         </div>
 
-        {showImporter && (
+        {showCreator && (
           <div className="exam-import-card">
             <div className="panel-heading">
-              <div>
-                <h3>Import exam paper</h3>
-                <p>
-                  PDF is recommended for the best preservation of layout,
-                  tables, graphs and diagrams.
-                </p>
-              </div>
-              <button
-                className="icon-button"
-                type="button"
-                onClick={resetImporter}
-                disabled={uploading}
-              >
-                <X size={18} />
-              </button>
+              <div><h3>Create exam</h3><p>Start a clean draft. No timer: students submit when finished while the exam remains open.</p></div>
+              <button className="icon-button" type="button" onClick={() => setShowCreator(false)} disabled={creatingExam}>×</button>
             </div>
-
             <div className="exam-import-grid">
-              <label>
-                <span>Optional title override</span>
-                <input
-                  value={titleOverride}
-                  onChange={(event) => setTitleOverride(event.target.value)}
-                  placeholder="Leave blank to detect from paper"
-                  disabled={uploading}
-                />
-              </label>
-
-              <label>
-                <span>Optional duration override</span>
-                <input
-                  type="number"
-                  min="1"
-                  value={durationOverride}
-                  onChange={(event) =>
-                    setDurationOverride(event.target.value)
-                  }
-                  placeholder="Minutes"
-                  disabled={uploading}
-                />
-              </label>
-
-              <label className="exam-file-field">
-                <span>Exam paper</span>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept=".pdf,.docx,.png,.jpg,.jpeg,.webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/webp"
-                  disabled={uploading}
-                  onChange={(event) =>
-                    setFile(event.target.files?.[0] ?? null)
-                  }
-                />
-              </label>
+              <label><span>Exam title</span><input value={creatorTitle} onChange={(e) => setCreatorTitle(e.target.value)} placeholder="e.g. Stage 6 Science Revision Paper 1" disabled={creatingExam} /></label>
+              <label><span>Class and subject</span><input value={`${classes.find((x) => x.id === selectedClassId)?.name ?? ''} · ${subjects.find((x) => x.id === selectedSubjectId)?.name ?? ''}`} readOnly /></label>
             </div>
-
-            <div className="exam-import-selected">
-              <BookOpen size={16} />
-              <span>
-                <strong>
-                  {classes.find((item) => item.id === selectedClassId)?.name ??
-                    'Class'}
-                </strong>
-                {' · '}
-                {subjects.find((item) => item.id === selectedSubjectId)?.name ??
-                  'Subject'}
-              </span>
-            </div>
-
-            {file && (
-              <div className="exam-file-chip">
-                <FileText size={15} />
-                <span>{file.name}</span>
-                <small>{(file.size / 1024 / 1024).toFixed(1)} MB</small>
-              </div>
-            )}
-
-            {progress && (
-              <div className="exam-import-progress">
-                <Sparkles size={17} />
-                <span>{progress}</span>
-              </div>
-            )}
-
-            <div className="exam-import-actions">
-              <button
-                className="primary"
-                type="button"
-                onClick={() => void importExam()}
-                disabled={uploading || !file}
-              >
-                <Sparkles size={16} />
-                {uploading
-                  ? 'Extracting exam…'
-                  : 'Extract Questions & Build Draft'}
-              </button>
-            </div>
+            <label style={{ display: 'block', marginTop: '12px' }}><span>Instructions</span><textarea rows={3} value={creatorInstructions} onChange={(e) => setCreatorInstructions(e.target.value)} placeholder="Instructions shown to students before the questions." disabled={creatingExam} /></label>
+            <div className="exam-import-actions"><button className="primary" type="button" onClick={() => void createManualExam()} disabled={creatingExam || !creatorTitle.trim()}>{creatingExam ? 'Creating…' : 'Create Draft & Build Questions'}</button></div>
           </div>
         )}
 
