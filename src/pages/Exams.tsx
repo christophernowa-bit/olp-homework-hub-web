@@ -12,6 +12,8 @@ import {
   Sparkles,
   Upload,
   X,
+  Trash2,
+  Bot,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { getCurrentUserRole, type UserRole } from '../lib/userRole'
@@ -55,6 +57,30 @@ type ExamAttemptRow = {
   final_mark: number | null
   returned_at: string | null
   deadline_at: string | null
+  ai_mark?: number | null
+}
+
+type TeacherMarkResult = {
+  id: string
+  answer_id: string
+  method: string
+  max_marks: number
+  ai_mark: number | null
+  teacher_mark: number | null
+  final_mark: number | null
+  feedback: string | null
+  ai_confidence: number | null
+  ai_rationale: Record<string, unknown> | null
+}
+
+type TeacherAnswer = {
+  id: string
+  question_id: string
+  answer_text: string | null
+  selected_option_key: string | null
+  dropdown_value: string | null
+  matching_response: unknown[]
+  answer_json: Record<string, unknown>
 }
 
 type QuestionType =
@@ -239,6 +265,13 @@ export default function Exams() {
   const [diagramBusyId, setDiagramBusyId] = useState<string | null>(null)
   const [markingKeyFile, setMarkingKeyFile] = useState<File | null>(null)
   const [markingKeyBusy, setMarkingKeyBusy] = useState(false)
+  const [teacherAttempts, setTeacherAttempts] = useState<ExamAttemptRow[]>([])
+  const [teacherMarkingAttempt, setTeacherMarkingAttempt] = useState<ExamAttemptRow | null>(null)
+  const [teacherMarkAnswers, setTeacherMarkAnswers] = useState<TeacherAnswer[]>([])
+  const [teacherMarkResults, setTeacherMarkResults] = useState<TeacherMarkResult[]>([])
+  const [aiMarkBusyId, setAiMarkBusyId] = useState<string | null>(null)
+  const [deleteExamBusy, setDeleteExamBusy] = useState(false)
+  const [teacherMarkBusy, setTeacherMarkBusy] = useState(false)
   const questionTextRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
   const inputRef = useRef<HTMLInputElement | null>(null)
 
@@ -913,6 +946,16 @@ export default function Exams() {
       if (schemeError) throw schemeError
 
       setReviewExam(loadedExam as ExamRow)
+      const { data: attemptRows, error: attemptRowsError } = await supabase
+        .from('exam_attempts')
+        .select('id,exam_id,student_id,status,started_at,submitted_at,final_mark,returned_at,deadline_at,ai_mark')
+        .eq('exam_id', examId)
+        .order('submitted_at', { ascending: false })
+      if (attemptRowsError) throw attemptRowsError
+      setTeacherAttempts((attemptRows ?? []) as ExamAttemptRow[])
+      setTeacherMarkingAttempt(null)
+      setTeacherMarkAnswers([])
+      setTeacherMarkResults([])
       setTeacherEditMode(false)
       setQuestions(loadedQuestions)
       setOptions(loadedOptions)
@@ -1536,6 +1579,114 @@ export default function Exams() {
     } finally { setMarkingKeyBusy(false) }
   }
 
+  async function runAiMark(attempt: ExamAttemptRow) {
+    try {
+      setAiMarkBusyId(attempt.id)
+      setError('')
+      setMessage('')
+      const { data, error: invokeError } = await supabase.functions.invoke('exam-ai-mark', {
+        body: { attempt_id: attempt.id },
+      })
+      if (invokeError) throw invokeError
+      if (data?.error) throw new Error(data.error)
+      setMessage(`AI marking completed: ${Number(data?.ai_mark ?? 0)} proposed marks. Teacher review is required.`)
+      if (reviewExam) await openExam(reviewExam.id)
+      await openTeacherMarkReview(attempt.id)
+    } catch (err) {
+      setError(errorMessage(err, 'AI marking could not be completed.'))
+    } finally {
+      setAiMarkBusyId(null)
+    }
+  }
+
+  async function openTeacherMarkReview(attemptId: string) {
+    try {
+      setTeacherMarkBusy(true)
+      setError('')
+      const [attemptResult, answerResult] = await Promise.all([
+        supabase.from('exam_attempts').select('id,exam_id,student_id,status,started_at,submitted_at,final_mark,returned_at,deadline_at,ai_mark').eq('id', attemptId).single(),
+        supabase.from('exam_answers').select('id,question_id,answer_text,selected_option_key,dropdown_value,matching_response,answer_json').eq('attempt_id', attemptId),
+      ])
+      if (attemptResult.error) throw attemptResult.error
+      if (answerResult.error) throw answerResult.error
+      const loadedAnswers = (answerResult.data ?? []) as TeacherAnswer[]
+      const answerIds = loadedAnswers.map((item) => item.id)
+      let loadedResults: TeacherMarkResult[] = []
+      if (answerIds.length > 0) {
+        const markResult = await supabase.from('exam_mark_results').select('id,answer_id,method,max_marks,ai_mark,teacher_mark,final_mark,feedback,ai_confidence,ai_rationale').in('answer_id', answerIds)
+        if (markResult.error) throw markResult.error
+        loadedResults = (markResult.data ?? []) as TeacherMarkResult[]
+      }
+      setTeacherMarkAnswers(loadedAnswers)
+      setTeacherMarkResults(loadedResults)
+      setTeacherMarkingAttempt(attemptResult.data as ExamAttemptRow)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not open marking review.'))
+    } finally { setTeacherMarkBusy(false) }
+  }
+
+  function updateTeacherMarkLocal(resultId: string, value: number) {
+    setTeacherMarkResults((current) => current.map((item) => item.id === resultId ? { ...item, teacher_mark: value } : item))
+  }
+
+  async function approveTeacherMarking() {
+    if (!teacherMarkingAttempt) return
+    try {
+      setTeacherMarkBusy(true)
+      setError('')
+      setMessage('')
+      let total = 0
+      for (const result of teacherMarkResults) {
+        const chosen = result.teacher_mark ?? result.ai_mark ?? 0
+        const finalMark = Math.min(Number(result.max_marks || 0), Math.max(0, Number(chosen)))
+        const { error: updateError } = await supabase.from('exam_mark_results').update({
+          teacher_mark: finalMark,
+          final_mark: finalMark,
+          method: result.ai_mark == null ? 'teacher' : (finalMark === result.ai_mark ? 'ai' : 'mixed'),
+          reviewed_by: userId,
+          reviewed_at: new Date().toISOString(),
+        }).eq('id', result.id)
+        if (updateError) throw updateError
+        total += finalMark
+      }
+      const now = new Date().toISOString()
+      const { error: attemptError } = await supabase.from('exam_attempts').update({
+        status: 'returned', teacher_mark: total, final_mark: total, teacher_reviewed_at: now, returned_at: now, marked_by: userId,
+      }).eq('id', teacherMarkingAttempt.id)
+      if (attemptError) throw attemptError
+      setMessage(`Marking approved and returned to the student: ${total} marks.`)
+      setTeacherMarkingAttempt(null)
+      if (reviewExam) await openExam(reviewExam.id)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not approve and return the marking.'))
+    } finally { setTeacherMarkBusy(false) }
+  }
+
+  async function deleteCurrentExam() {
+    if (!reviewExam) return
+    const confirmed = window.confirm(`Permanently delete "${reviewExam.title}"? This removes its questions, student attempts, answers and marking results. This cannot be undone.`)
+    if (!confirmed) return
+    const typed = window.prompt('Type DELETE to confirm permanent deletion.')
+    if (typed !== 'DELETE') return
+    try {
+      setDeleteExamBusy(true)
+      setError('')
+      setMessage('')
+      const { data, error: invokeError } = await supabase.functions.invoke('exam-delete', { body: { exam_id: reviewExam.id } })
+      if (invokeError) throw invokeError
+      if (data?.error) throw new Error(data.error)
+      const deletedTitle = reviewExam.title
+      setReviewExam(null)
+      setTeacherEditMode(false)
+      setTeacherAttempts([])
+      setTeacherMarkingAttempt(null)
+      await loadTeacherWorkspace(userId)
+      setMessage(`Exam deleted permanently: ${deletedTitle}`)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not delete this exam.'))
+    } finally { setDeleteExamBusy(false) }
+  }
+
   function validateExamForPublish() {
     if (!reviewExam) return ['No exam is open.']
 
@@ -2095,6 +2246,7 @@ export default function Exams() {
         <div className="exam-view-toolbar">
           <button className="secondary compact-action" type="button" onClick={() => setReviewExam(null)}>← Back to Exams</button>
           <button className="primary compact-action" type="button" onClick={() => setTeacherEditMode(true)}>Edit exam</button>
+          <button className="secondary compact-action danger-action" type="button" disabled={deleteExamBusy} onClick={() => void deleteCurrentExam()}><Trash2 size={14} /> {deleteExamBusy ? 'Deleting…' : 'Delete exam'}</button>
         </div>
         {message && <p className="admin-message admin-message-success">{message}</p>}
         {error && <p className="admin-message admin-message-error">{error}</p>}
@@ -2117,6 +2269,44 @@ export default function Exams() {
             )
           })}
         </section>
+        <section className="panel exam-marking-workspace">
+          <div className="panel-heading"><div><p className="eyebrow">SUBMISSIONS & MARKING</p><h3>Student submissions</h3><p>Run AI marking on submitted work, then review every proposed mark before returning the result.</p></div></div>
+          {teacherAttempts.filter((attempt) => attempt.status !== 'in_progress').length === 0 ? (
+            <div className="empty-state"><FileText size={28} /><strong>No submitted attempts yet</strong><p>Submitted student papers will appear here.</p></div>
+          ) : (
+            <div className="exam-marking-attempts">
+              {teacherAttempts.filter((attempt) => attempt.status !== 'in_progress').map((attempt) => (
+                <div className="exam-marking-attempt" key={attempt.id}>
+                  <div><strong>Student submission</strong><p className="muted">{attempt.student_id.slice(0, 8)}… · {attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleString() : 'Submitted'}</p></div>
+                  <span className={`assignment-status ${attempt.status}`}>{attempt.status}</span>
+                  {attempt.ai_mark != null && <strong>{attempt.ai_mark} AI marks</strong>}
+                  {attempt.final_mark != null && <strong>{attempt.final_mark} final marks</strong>}
+                  <div className="exam-marking-actions">
+                    {attempt.status === 'submitted' && <button className="primary compact-action" type="button" disabled={aiMarkBusyId === attempt.id} onClick={() => void runAiMark(attempt)}><Bot size={14} /> {aiMarkBusyId === attempt.id ? 'AI marking…' : 'AI Mark'}</button>}
+                    {['marked','returned'].includes(attempt.status) && <button className="secondary compact-action" type="button" disabled={teacherMarkBusy} onClick={() => void openTeacherMarkReview(attempt.id)}>{attempt.status === 'returned' ? 'View marking' : 'Review marking'}</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {teacherMarkingAttempt && (
+            <div className="exam-mark-review">
+              <div className="panel-heading"><div><h3>Teacher review</h3><p>AI marks are proposals. Adjust any mark before approval.</p></div><button className="secondary compact-action" type="button" onClick={() => setTeacherMarkingAttempt(null)}>Close review</button></div>
+              {questions.map((question) => {
+                const answer = teacherMarkAnswers.find((item) => item.question_id === question.id)
+                const result = answer ? teacherMarkResults.find((item) => item.answer_id === answer.id) : undefined
+                if (!answer || !result) return null
+                const displayedAnswer = answer.answer_text || answer.selected_option_key || answer.dropdown_value || (Array.isArray(answer.matching_response) ? JSON.stringify(answer.matching_response) : '') || 'No answer'
+                return <div className="exam-mark-review-row" key={question.id}>
+                  <div className="exam-mark-review-question"><strong>Question {question.question_number}</strong><p>{question.question_text}</p><span>Student: {displayedAnswer}</span><small>{result.feedback || 'No AI feedback.'}</small></div>
+                  <div className="exam-mark-review-score"><span>AI: {result.ai_mark ?? 0}/{result.max_marks}</span><label>Teacher mark<input type="number" min="0" max={result.max_marks} step="0.5" value={result.teacher_mark ?? result.ai_mark ?? 0} disabled={teacherMarkingAttempt.status === 'returned'} onChange={(e) => updateTeacherMarkLocal(result.id, Number(e.target.value))} /></label></div>
+                </div>
+              })}
+              {teacherMarkingAttempt.status !== 'returned' && <div className="exam-mark-review-footer"><strong>Proposed total: {teacherMarkResults.reduce((sum, item) => sum + Number(item.teacher_mark ?? item.ai_mark ?? 0), 0)}</strong><button className="primary" type="button" disabled={teacherMarkBusy} onClick={() => void approveTeacherMarking()}>{teacherMarkBusy ? 'Saving…' : 'Approve & Return to Student'}</button></div>}
+            </div>
+          )}
+        </section>
+
         <section className="panel exam-answer-key">
           <div className="panel-heading"><div><h3>Marking Key / Answer Key</h3><p>Teacher and platform-owner view only. This key is the authority for automatic and AI-assisted marking.</p></div></div>
           <div className="answer-key-table">
