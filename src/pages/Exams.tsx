@@ -2307,26 +2307,6 @@ export default function Exams() {
           )}
         </section>
 
-        <section className="panel exam-answer-key">
-          <div className="panel-heading"><div><h3>Marking Key / Answer Key</h3><p>Teacher and platform-owner view only. This key is the authority for automatic and AI-assisted marking.</p></div></div>
-          <div className="answer-key-table">
-            <div className="answer-key-row answer-key-head"><strong>Question</strong><strong>Answer / marking guidance</strong><strong>Marks</strong></div>
-            {questions.map((question) => {
-              const scheme = markSchemes.find((m) => m.question_id === question.id)
-              const qOptions = options.filter((o) => o.question_id === question.id)
-              const key = scheme?.answer_key as any
-              let answer = scheme?.expected_answer || ''
-              if (question.question_type === 'multiple_choice' || question.question_type === 'dropdown') {
-                const correct = String(key?.correct_option ?? '')
-                const opt = qOptions.find(o => o.option_key === correct)
-                answer = correct ? `${correct}${opt?.option_text ? `. ${opt.option_text}` : ''}` : answer
-              }
-              if (!answer && Array.isArray(scheme?.marking_points)) answer = scheme!.marking_points.map((p:any) => typeof p === 'string' ? p : p?.text ?? '').filter(Boolean).join('; ')
-              if (!answer && question.question_type === 'matching' && key) answer = Object.entries(key).map(([l,r]) => `${l} → ${String(r)}`).join('; ')
-              return <div className="answer-key-row" key={question.id}><strong>{question.question_number}</strong><span>{answer || '—'}</span><span>{question.marks}</span></div>
-            })}
-          </div>
-        </section>
       </main>
     )
   }
