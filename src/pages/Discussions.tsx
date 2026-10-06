@@ -108,9 +108,11 @@ export default function Discussions() {
     e.preventDefault(); if(!selected||!reply.trim()) return
     try{
       setBusy(true); setError('')
-      const {error:insertError}=await supabase.from('discussion_posts').insert({discussion_id:selected.id,created_by:userId,body:reply.trim()})
+      const replyBody=reply.trim()
+      const {data:newPost,error:insertError}=await supabase.from('discussion_posts').insert({discussion_id:selected.id,created_by:userId,body:replyBody}).select('*').single()
       if(insertError) throw insertError
-      setReply(''); await loadAll()
+      setReply('')
+      if(newPost) setPosts(current=>[...current.filter(p=>p.id!==newPost.id),newPost as PostRow].sort((a,b)=>new Date(a.created_at).getTime()-new Date(b.created_at).getTime()))
     }catch(err){setError(err instanceof Error?err.message:'Could not post reply.')}finally{setBusy(false)}
   }
 
