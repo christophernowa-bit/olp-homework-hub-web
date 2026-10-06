@@ -12,15 +12,17 @@ import ProtectedRoute from './components/ProtectedRoute'
 import RoleRoute from './components/RoleRoute'
 import OwnerDashboard from './pages/OwnerDashboard'
 import UsersRoles from './pages/UsersRoles'
+import Landing from './pages/Landing'  
 
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/exams" element={<Exams />} />
           <Route path="/classes" element={<Classes />} />
           <Route path="/assignments" element={<Assignments />} />
