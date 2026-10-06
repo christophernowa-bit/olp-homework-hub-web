@@ -13,7 +13,7 @@ import {
   UsersRound,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-
+import '../landing.css'
 type SessionState = 'checking' | 'guest' | 'signed-in'
 
 const features = [
