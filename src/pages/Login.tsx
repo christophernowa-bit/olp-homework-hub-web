@@ -50,7 +50,7 @@ export default function Login() {
         password,
       })
       if (error) throw error
-      window.location.href = '/'
+      window.location.href = '/dashboard'
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Unable to sign in.')
     } finally {
