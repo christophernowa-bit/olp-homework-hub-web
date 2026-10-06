@@ -61,7 +61,7 @@ export default function AppLayout() {
 
         <nav className="nav">
           <NavLink
-            to="/"
+           to="/dashboard"
             end
             className={({ isActive }) =>
               `nav-item${isActive ? ' active' : ''}`
