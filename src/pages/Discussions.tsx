@@ -64,11 +64,8 @@ export default function Discussions() {
     const loadedDiscussions=(discussionResult.data??[]) as DiscussionRow[]
     const loadedPosts=(postResult.data??[]) as PostRow[]
     setClasses(loadedClasses); setSubjects(loadedSubjects); setDiscussions(loadedDiscussions); setPosts(loadedPosts)
-    const ids=[...new Set([...loadedDiscussions.map(d=>d.created_by),...loadedPosts.map(p=>p.created_by)])]
-    if(ids.length){
-      const pr=await supabase.from('profiles').select('id,full_name').in('id',ids)
-      if(!pr.error) setProfiles((pr.data??[]) as ProfileRow[])
-    }
+    const pr=await supabase.rpc('get_discussion_participant_names')
+    if(!pr.error) setProfiles((pr.data??[]) as ProfileRow[])
     setSelectedId(current=>current && loadedDiscussions.some(d=>d.id===current) ? current : loadedDiscussions[0]?.id ?? null)
   }
 
@@ -108,11 +105,9 @@ export default function Discussions() {
     e.preventDefault(); if(!selected||!reply.trim()) return
     try{
       setBusy(true); setError('')
-      const replyBody=reply.trim()
-      const {data:newPost,error:insertError}=await supabase.from('discussion_posts').insert({discussion_id:selected.id,created_by:userId,body:replyBody}).select('*').single()
+      const {error:insertError}=await supabase.from('discussion_posts').insert({discussion_id:selected.id,created_by:userId,body:reply.trim()})
       if(insertError) throw insertError
-      setReply('')
-      if(newPost) setPosts(current=>[...current.filter(p=>p.id!==newPost.id),newPost as PostRow].sort((a,b)=>new Date(a.created_at).getTime()-new Date(b.created_at).getTime()))
+      setReply(''); await loadAll()
     }catch(err){setError(err instanceof Error?err.message:'Could not post reply.')}finally{setBusy(false)}
   }
 
