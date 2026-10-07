@@ -1068,7 +1068,7 @@ export default function ResourceCentre() {
                   })
                 }
                 placeholder={files.length > 0 && !editing ? "Titles will be created from filenames" : "Resource title"}
-                required={editing || files.length === 0}
+                required={Boolean(editing) || files.length === 0}
                 disabled={!editing && files.length > 0}
               />
             </label>
