@@ -43,6 +43,9 @@ type Resource = {
 
 type UserRole = 'platform_owner' | 'teacher' | 'student'
 
+type AcademicClass = { id: string; name: string; curriculum: string; level: string; academic_year: number | null }
+type AcademicSubject = { id: string; class_id: string; name: string }
+
 type TeacherProfile = {
   id: string
   displayName: string
@@ -91,6 +94,13 @@ export default function ResourceCentre() {
   const [saving, setSaving] = useState(false)
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentRole, setCurrentRole] = useState<UserRole | null>(null)
+  const [classes, setClasses] = useState<AcademicClass[]>([])
+  const [classSubjects, setClassSubjects] = useState<AcademicSubject[]>([])
+  const [selectedClassId, setSelectedClassId] = useState('')
+  const [selectedSubjectId, setSelectedSubjectId] = useState('')
+  const [browseClass, setBrowseClass] = useState('')
+  const [browseSubject, setBrowseSubject] = useState('')
+  const [browseYear, setBrowseYear] = useState('')
 
   const [shareResource, setShareResource] = useState<Resource | null>(null)
   const [teachers, setTeachers] = useState<TeacherProfile[]>([])
@@ -222,17 +232,41 @@ export default function ResourceCentre() {
       .eq('status', 'active')
     if (enrolmentError) throw enrolmentError
     const classIds = [...new Set((enrolments ?? []).map((row) => row.class_id))]
+    const { data: enrolledClasses, error: classError } = classIds.length ? await supabase.from('classes').select('id, name, curriculum, level').in('id', classIds) : { data: [], error: null }
+    if (classError) throw classError
+    const classById = new Map((enrolledClasses ?? []).map((item) => [item.id, item]))
     const collected: Resource[] = []
     for (const classId of classIds) {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/class-resources?class_id=${encodeURIComponent(classId)}`, { headers: { Authorization: `Bearer ${token}` } })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Unable to load class resources.')
+      const classRow = classById.get(classId)
       for (const resource of result.resources ?? []) {
-        collected.push({ ...resource, created_by: '', is_published: true, created_at: resource.assigned_at ?? '', updated_at: resource.assigned_at ?? '' })
+        collected.push({ ...resource, curriculum: classRow?.curriculum ?? resource.curriculum, level: classRow?.name ?? resource.level, subject: resource.class_subject ?? resource.subject, created_by: '', is_published: true, created_at: resource.assigned_at ?? '', updated_at: resource.assigned_at ?? '' })
       }
     }
     const unique = Array.from(new Map(collected.map((resource) => [resource.id, resource])).values())
     setResources(unique)
+  }
+
+  async function loadAcademicStructure(userId: string, role: UserRole) {
+    if (role === 'student') return
+    const { data: classRows, error: classError } = await supabase.from('classes').select('id, name, curriculum, level, academic_year').eq('created_by', userId).eq('is_active', true).order('name')
+    if (classError) throw classError
+    const nextClasses = (classRows ?? []) as AcademicClass[]
+    setClasses(nextClasses)
+    if (!nextClasses.length) { setClassSubjects([]); return }
+    const { data: subjectRows, error: subjectError } = await supabase.from('class_subjects').select('id, class_id, name').in('class_id', nextClasses.map((item) => item.id)).order('name')
+    if (subjectError) throw subjectError
+    setClassSubjects((subjectRows ?? []) as AcademicSubject[])
+  }
+
+  async function assignResourceToClass(resourceId: string) {
+    if (!selectedClassId || !selectedSubjectId) throw new Error('Select a class and subject before uploading.')
+    const token = await getAccessToken()
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/class-resources`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ class_id: selectedClassId, subject_id: selectedSubjectId, resource_id: resourceId }) })
+    const result = await response.json()
+    if (!response.ok) throw new Error(result.error || 'Unable to assign resource to the selected class.')
   }
 
   async function initialiseResourceCentre() {
@@ -243,6 +277,7 @@ export default function ResourceCentre() {
       const identity = await getCurrentIdentity()
       setCurrentUserId(identity.userId)
       setCurrentRole(identity.role)
+      await loadAcademicStructure(identity.userId, identity.role)
 
       if (identity.role === 'student') {
         await loadStudentResources(identity.userId)
@@ -300,6 +335,8 @@ export default function ResourceCentre() {
     setForm(emptyForm)
     setFile(null)
     setFiles([])
+    setSelectedClassId('')
+    setSelectedSubjectId('')
     setMessage('')
     setError('')
     setShowForm(true)
@@ -486,7 +523,7 @@ export default function ResourceCentre() {
         const details = await uploadFile(selectedFile)
         uploadedPaths.push(details.filePath)
         const detectedYear = detectedYearFromName(selectedFile.name)
-        await callResources('POST', currentRole!, {
+        const created = await callResources('POST', currentRole!, {
           title: titleFromFileName(selectedFile.name),
           description: form.description.trim(),
           curriculum, level, subject,
@@ -496,6 +533,8 @@ export default function ResourceCentre() {
           file_name: details.fileName, file_path: details.filePath,
           file_size: details.fileSize, mime_type: details.mimeType,
         })
+        if (!created.resource?.id) throw new Error('Resource was created without an ID.')
+        await assignResourceToClass(created.resource.id)
         uploadedPaths.splice(uploadedPaths.indexOf(details.filePath), 1)
       }
       return files.length
@@ -535,6 +574,8 @@ export default function ResourceCentre() {
           'Title, curriculum, class/level and subject are required.',
         )
       }
+
+      if (!editing && (!selectedClassId || !selectedSubjectId)) throw new Error('Select a class and subject before uploading.')
 
       if (!editing && files.length > 0) {
         const count = await saveBulkResources(curriculum, level, subject)
@@ -625,9 +666,11 @@ export default function ResourceCentre() {
           payload.mime_type = fileDetails.mimeType
         }
 
-        await callResources('POST', currentRole!, payload)
+        const created = await callResources('POST', currentRole!, payload)
+        if (!created.resource?.id) throw new Error('Resource was created without an ID.')
+        await assignResourceToClass(created.resource.id)
 
-        setMessage('Resource added successfully.')
+        setMessage('Resource added and assigned successfully.')
       }
 
       newlyUploadedPath = null
@@ -1056,6 +1099,11 @@ export default function ResourceCentre() {
             className="resource-form"
             onSubmit={handleSave}
           >
+            {!editing && (<>
+              <label><span>Class *</span><select value={selectedClassId} onChange={(event) => { const classId = event.target.value; setSelectedClassId(classId); setSelectedSubjectId(''); const selected = classes.find((item) => item.id === classId); if (selected) setForm((current) => ({ ...current, curriculum: selected.curriculum, level: selected.name })) }} required><option value="">Select class</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+              <label><span>Subject *</span><select value={selectedSubjectId} onChange={(event) => { const subjectId = event.target.value; setSelectedSubjectId(subjectId); const selected = classSubjects.find((item) => item.id === subjectId); if (selected) setForm((current) => ({ ...current, subject: subjectOptions.includes(selected.name) ? selected.name : 'Other', customSubject: subjectOptions.includes(selected.name) ? '' : selected.name })) }} disabled={!selectedClassId} required><option value="">Select subject</option>{classSubjects.filter((item) => item.class_id === selectedClassId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            </>)}
+
             <label>
               <span>Title *</span>
               <input
@@ -1073,6 +1121,7 @@ export default function ResourceCentre() {
               />
             </label>
 
+            {editing && (<>
             <label>
               <span>Curriculum *</span>
               <select
@@ -1227,6 +1276,8 @@ export default function ResourceCentre() {
                 />
               </label>
             )}
+
+            </>)}
 
             <label>
               <span>Year</span>
@@ -1509,7 +1560,9 @@ export default function ResourceCentre() {
                 <p>
                   {search
                     ? 'Try a different search.'
-                    : 'Add your first teaching resource to get started.'}
+                    : currentRole === 'student'
+                      ? 'No learning resources have been assigned to your class yet.'
+                      : 'Add a resource to a class and subject to get started.'}
                 </p>
               </div>
             )}
@@ -1517,172 +1570,11 @@ export default function ResourceCentre() {
           {!loading &&
             filteredResources.length >
               0 && (
-              <div className="academic-library">
-                {Array.from(resourceGroups.entries()).map(([className, subjectMap]) => (
-                  <section className="academic-class" key={className}>
-                    <div className="academic-class-heading"><FolderOpen size={20} /><div><strong>{className}</strong><small>{Array.from(subjectMap.values()).reduce((n, years) => n + Array.from(years.values()).reduce((m, items) => m + items.length, 0), 0)} resources</small></div></div>
-                    {Array.from(subjectMap.entries()).map(([subject, yearMap]) => (
-                      <div className="academic-subject" key={subject}>
-                        <h4>{subject}</h4>
-                        {Array.from(yearMap.entries()).sort(([a],[b]) => b.localeCompare(a)).map(([year, yearResources]) => (
-                          <details className="academic-year" key={year} open>
-                            <summary><span>{year}</span><small>{yearResources.length} item{yearResources.length === 1 ? '' : 's'}</small></summary>
-                            <div className="resource-list">
-                              {yearResources.map((resource) => (
-<article
-                      className="resource-item"
-                      key={resource.id}
-                    >
-                      <div className="resource-item-icon">
-                        <FileText
-                          size={20}
-                        />
-                      </div>
-
-                      <div className="resource-item-content">
-                        <div className="resource-item-title">
-                          <strong>
-                            {resource.title}
-                          </strong>
-
-                          <span
-                            className={
-                              resource.is_published
-                                ? 'resource-status published'
-                                : 'resource-status draft'
-                            }
-                          >
-                            {resource.is_published
-                              ? 'Published'
-                              : 'Draft'}
-                          </span>
-                        </div>
-
-                        <p>
-                          {
-                            resource.curriculum
-                          }
-                          {' · '}
-                          {resource.level}
-                          {' · '}
-                          {resource.subject}
-                          {resource.year !==
-                            null &&
-                            ` · ${resource.year}`}
-                        </p>
-
-                        {resource.description && (
-                          <small>
-                            {
-                              resource.description
-                            }
-                          </small>
-                        )}
-
-                        {resource.file_name && (
-                          <small>
-                            File:{' '}
-                            {
-                              resource.file_name
-                            }
-                          </small>
-                        )}
-                      </div>
-
-                      <div className="resource-actions">
-                        {resource.file_path && (
-                          <>
-                            <button
-                              type="button"
-                              title="View"
-                              onClick={() =>
-                                openResource(
-                                  resource,
-                                )
-                              }
-                            >
-                              <Eye
-                                size={16}
-                              />
-                            </button>
-
-                            <button
-                              type="button"
-                              title="Download"
-                              onClick={() =>
-                                downloadResource(
-                                  resource,
-                                )
-                              }
-                            >
-                              <Download
-                                size={16}
-                              />
-                            </button>
-                          </>
-                        )}
-
-                        {currentRole === 'platform_owner' &&
-                          resource.created_by === currentUserId && (
-                            <button
-                              type="button"
-                              title="Share / Send for Review"
-                              onClick={() => openSharePanel(resource)}
-                            >
-                              <Share2 size={16} />
-                            </button>
-                          )}
-
-                        {canManageResource(resource) && (
-                          <>
-                            <button
-                              type="button"
-                              title="Edit"
-                              onClick={() =>
-                                openEditForm(
-                                  resource,
-                                )
-                              }
-                            >
-                              <Edit3 size={16} />
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                togglePublished(
-                                  resource,
-                                )
-                              }
-                            >
-                              {resource.is_published
-                                ? 'Unpublish'
-                                : 'Publish'}
-                            </button>
-
-                            <button
-                              type="button"
-                              title="Delete"
-                              onClick={() =>
-                                deleteResource(
-                                  resource,
-                                )
-                              }
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </article>
-                              ))}
-                            </div>
-                          </details>
-                        ))}
-                      </div>
-                    ))}
-                  </section>
-                ))}
+              <div className="academic-library academic-browser">
+                {!browseClass && Array.from(resourceGroups.entries()).map(([className, subjectMap]) => { const count = Array.from(subjectMap.values()).reduce((n, years) => n + Array.from(years.values()).reduce((m, items) => m + items.length, 0), 0); return <button type="button" className="academic-browser-card" key={className} onClick={() => { setBrowseClass(className); setBrowseSubject(''); setBrowseYear('') }}><FolderOpen size={22} /><span><strong>{className}</strong><small>{count} resource{count === 1 ? '' : 's'}</small></span></button> })}
+                {browseClass && !browseSubject && <div className="academic-browser-stage"><button type="button" className="academic-back" onClick={() => setBrowseClass('')}>← All classes</button><h3>{browseClass}</h3><div className="academic-chip-grid">{Array.from(resourceGroups.get(browseClass)?.entries() ?? []).map(([subject, years]) => { const count = Array.from(years.values()).reduce((n, items) => n + items.length, 0); return <button type="button" className="academic-subject-chip" key={subject} onClick={() => setBrowseSubject(subject)}><BookOpen size={17} /><span>{subject}</span><small>{count}</small></button> })}</div></div>}
+                {browseClass && browseSubject && !browseYear && <div className="academic-browser-stage"><button type="button" className="academic-back" onClick={() => setBrowseSubject('')}>← {browseClass}</button><h3>{browseSubject}</h3><div className="academic-year-grid">{Array.from(resourceGroups.get(browseClass)?.get(browseSubject)?.entries() ?? []).sort(([a],[b]) => b.localeCompare(a)).map(([year, items]) => <button type="button" className="academic-year-card" key={year} onClick={() => setBrowseYear(year)}><strong>{year}</strong><small>{items.length} item{items.length === 1 ? '' : 's'}</small></button>)}</div></div>}
+                {browseClass && browseSubject && browseYear && <div className="academic-browser-stage"><button type="button" className="academic-back" onClick={() => setBrowseYear('')}>← {browseSubject}</button><div className="academic-stage-heading"><div><h3>{browseYear}</h3><p>{browseClass} · {browseSubject}</p></div></div><div className="resource-list compact-resource-list">{(resourceGroups.get(browseClass)?.get(browseSubject)?.get(browseYear) ?? []).map((resource) => <article className="resource-item compact-resource" key={resource.id}><div className="resource-item-icon"><FileText size={18} /></div><div className="resource-item-content"><strong>{resource.title}</strong>{resource.description && <small>{resource.description}</small>}</div><div className="resource-actions">{resource.file_path && <><button type="button" title="View" onClick={() => openResource(resource)}><Eye size={16} /></button><button type="button" title="Download" onClick={() => downloadResource(resource)}><Download size={16} /></button></>}{currentRole === 'platform_owner' && resource.created_by === currentUserId && <button type="button" title="Share / Send for Review" onClick={() => openSharePanel(resource)}><Share2 size={16} /></button>}{canManageResource(resource) && <><button type="button" title="Edit" onClick={() => openEditForm(resource)}><Edit3 size={16} /></button><button type="button" onClick={() => togglePublished(resource)}>{resource.is_published ? 'Unpublish' : 'Publish'}</button><button type="button" title="Delete" onClick={() => deleteResource(resource)}><Trash2 size={16} /></button></>}</div></article>)}</div></div>}
               </div>
             )}
         </div>
