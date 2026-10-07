@@ -38,9 +38,10 @@ type Resource = {
   is_published: boolean
   created_at: string
   updated_at: string
+  signed_url?: string | null
 }
 
-type UserRole = 'platform_owner' | 'teacher'
+type UserRole = 'platform_owner' | 'teacher' | 'student'
 
 type TeacherProfile = {
   id: string
@@ -86,6 +87,7 @@ export default function ResourceCentre() {
   const [editing, setEditing] = useState<Resource | null>(null)
   const [form, setForm] = useState<ResourceForm>(emptyForm)
   const [file, setFile] = useState<File | null>(null)
+  const [files, setFiles] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [currentUserId, setCurrentUserId] = useState('')
   const [currentRole, setCurrentRole] = useState<UserRole | null>(null)
@@ -169,7 +171,8 @@ export default function ResourceCentre() {
 
     if (
       profile.role !== 'platform_owner' &&
-      profile.role !== 'teacher'
+      profile.role !== 'teacher' &&
+      profile.role !== 'student'
     ) {
       throw new Error('Resource Centre access is not available for this role.')
     }
@@ -186,10 +189,8 @@ export default function ResourceCentre() {
     body?: Record<string, unknown>,
   ) {
     const token = await getAccessToken()
-    const functionName =
-      role === 'platform_owner'
-        ? 'owner-resources'
-        : 'teacher-resources'
+    if (role === 'student') throw new Error('Student resources are loaded from enrolled classes.')
+    const functionName = role === 'platform_owner' ? 'owner-resources' : 'teacher-resources'
 
     const response = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`,
@@ -212,6 +213,28 @@ export default function ResourceCentre() {
     return result
   }
 
+  async function loadStudentResources(userId: string) {
+    const token = await getAccessToken()
+    const { data: enrolments, error: enrolmentError } = await supabase
+      .from('class_enrolments')
+      .select('class_id')
+      .eq('student_id', userId)
+      .eq('status', 'active')
+    if (enrolmentError) throw enrolmentError
+    const classIds = [...new Set((enrolments ?? []).map((row) => row.class_id))]
+    const collected: Resource[] = []
+    for (const classId of classIds) {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/class-resources?class_id=${encodeURIComponent(classId)}`, { headers: { Authorization: `Bearer ${token}` } })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Unable to load class resources.')
+      for (const resource of result.resources ?? []) {
+        collected.push({ ...resource, created_by: '', is_published: true, created_at: resource.assigned_at ?? '', updated_at: resource.assigned_at ?? '' })
+      }
+    }
+    const unique = Array.from(new Map(collected.map((resource) => [resource.id, resource])).values())
+    setResources(unique)
+  }
+
   async function initialiseResourceCentre() {
     setLoading(true)
     setError('')
@@ -221,8 +244,12 @@ export default function ResourceCentre() {
       setCurrentUserId(identity.userId)
       setCurrentRole(identity.role)
 
-      const result = await callResources('GET', identity.role)
-      setResources(result.resources ?? [])
+      if (identity.role === 'student') {
+        await loadStudentResources(identity.userId)
+      } else {
+        const result = await callResources('GET', identity.role)
+        setResources(result.resources ?? [])
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -241,8 +268,12 @@ export default function ResourceCentre() {
     setError('')
 
     try {
-      const result = await callResources('GET', currentRole)
-      setResources(result.resources ?? [])
+      if (currentRole === 'student') {
+        await loadStudentResources(currentUserId)
+      } else {
+        const result = await callResources('GET', currentRole)
+        setResources(result.resources ?? [])
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -268,6 +299,7 @@ export default function ResourceCentre() {
     setEditing(null)
     setForm(emptyForm)
     setFile(null)
+    setFiles([])
     setMessage('')
     setError('')
     setShowForm(true)
@@ -331,6 +363,7 @@ export default function ResourceCentre() {
     })
 
     setFile(null)
+    setFiles([])
     setMessage('')
     setError('')
     setShowForm(true)
@@ -343,6 +376,7 @@ export default function ResourceCentre() {
     setEditing(null)
     setForm(emptyForm)
     setFile(null)
+    setFiles([])
   }
 
   function handleCurriculumChange(value: string) {
@@ -435,6 +469,42 @@ export default function ResourceCentre() {
       .remove([filePath])
   }
 
+  function detectedYearFromName(name: string) {
+    const matches = name.match(/(?:19|20)\d{2}/g) ?? []
+    const years = matches.map(Number).filter((year) => year >= 1990 && year <= 2100)
+    return years.length === 1 ? years[0] : null
+  }
+
+  function titleFromFileName(name: string) {
+    return name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim()
+  }
+
+  async function saveBulkResources(curriculum: string, level: string, subject: string) {
+    const uploadedPaths: string[] = []
+    try {
+      for (const selectedFile of files) {
+        const details = await uploadFile(selectedFile)
+        uploadedPaths.push(details.filePath)
+        const detectedYear = detectedYearFromName(selectedFile.name)
+        await callResources('POST', currentRole!, {
+          title: titleFromFileName(selectedFile.name),
+          description: form.description.trim(),
+          curriculum, level, subject,
+          year: detectedYear ?? (form.year === '' ? null : Number(form.year)),
+          resource_type: form.resource_type,
+          is_published: form.is_published,
+          file_name: details.fileName, file_path: details.filePath,
+          file_size: details.fileSize, mime_type: details.mimeType,
+        })
+        uploadedPaths.splice(uploadedPaths.indexOf(details.filePath), 1)
+      }
+      return files.length
+    } catch (error) {
+      for (const path of uploadedPaths) await removeUploadedFile(path)
+      throw error
+    }
+  }
+
   async function handleSave(
     event: React.FormEvent<HTMLFormElement>,
   ) {
@@ -456,7 +526,7 @@ export default function ResourceCentre() {
       const subject = actualSubject()
 
       if (
-        !form.title.trim() ||
+        (!editing && files.length > 0 ? false : !form.title.trim()) ||
         !curriculum ||
         !level ||
         !subject
@@ -464,6 +534,14 @@ export default function ResourceCentre() {
         throw new Error(
           'Title, curriculum, class/level and subject are required.',
         )
+      }
+
+      if (!editing && files.length > 0) {
+        const count = await saveBulkResources(curriculum, level, subject)
+        setMessage(`${count} resource${count === 1 ? '' : 's'} uploaded and organised successfully.`)
+        setShowForm(false); setEditing(null); setForm(emptyForm); setFile(null); setFiles([])
+        await loadResources()
+        return
       }
 
       const year =
@@ -651,6 +729,11 @@ export default function ResourceCentre() {
 
     setError('')
 
+    if (currentRole === 'student' && resource.signed_url) {
+      window.open(resource.signed_url, '_blank', 'noopener,noreferrer')
+      return
+    }
+
     const { data, error: signedUrlError } =
       await supabase.storage
         .from('resources')
@@ -688,6 +771,15 @@ export default function ResourceCentre() {
     }
 
     setError('')
+
+    if (currentRole === 'student' && resource.signed_url) {
+      const anchor = document.createElement('a')
+      anchor.href = resource.signed_url
+      anchor.target = '_blank'
+      anchor.rel = 'noopener noreferrer'
+      anchor.click()
+      return
+    }
 
     const { data, error: downloadError } =
       await supabase.storage
@@ -870,14 +962,25 @@ export default function ResourceCentre() {
     })
   }, [resources, search])
 
+  const resourceGroups = useMemo(() => {
+    const groups = new Map<string, Map<string, Map<string, Resource[]>>>()
+    for (const resource of filteredResources) {
+      const classKey = `${resource.curriculum} · ${resource.level}`
+      const subjectMap = groups.get(classKey) ?? new Map<string, Map<string, Resource[]>>()
+      const yearMap = subjectMap.get(resource.subject) ?? new Map<string, Resource[]>()
+      const yearKey = resource.year === null ? 'Year not identified' : String(resource.year)
+      yearMap.set(yearKey, [...(yearMap.get(yearKey) ?? []), resource])
+      subjectMap.set(resource.subject, yearMap); groups.set(classKey, subjectMap)
+    }
+    return groups
+  }, [filteredResources])
+
   return (
     <main className="main">
       <header className="topbar">
         <div>
           <p className="eyebrow">
-            {currentRole === 'platform_owner'
-              ? 'PLATFORM ADMINISTRATION'
-              : 'TEACHER WORKSPACE'}
+            {currentRole === 'platform_owner' ? 'PLATFORM ADMINISTRATION' : currentRole === 'student' ? 'STUDENT WORKSPACE' : 'TEACHER WORKSPACE'}
           </p>
           <h1>Resource Centre</h1>
         </div>
@@ -896,25 +999,18 @@ export default function ResourceCentre() {
             LEARNING RESOURCES
           </p>
           <h2>
-            {currentRole === 'platform_owner'
-              ? 'Manage teaching resources.'
-              : 'Teaching resources.'}
+            {currentRole === 'platform_owner' ? 'Manage teaching resources.' : currentRole === 'student' ? 'Your learning resources.' : 'Teaching resources.'}
           </h2>
           <p className="muted">
-            {currentRole === 'platform_owner'
-              ? 'Upload, organise, publish and manage learning materials across OLP Homework Hub.'
-              : 'Manage your teaching resources and access materials shared with you.'}
+            {currentRole === 'platform_owner' ? 'Upload, organise, publish and manage learning materials across OLP Homework Hub.' : currentRole === 'student' ? 'Browse resources assigned to your classes, organised by class, subject and year.' : 'Manage your teaching resources and access materials shared with you.'}
           </p>
         </div>
 
-        <button
-          className="primary"
-          type="button"
-          onClick={openAddForm}
-        >
-          <Plus size={17} />
-          Add resource
-        </button>
+        {currentRole !== 'student' && (
+          <button className="primary" type="button" onClick={openAddForm}>
+            <Plus size={17} /> Add resource
+          </button>
+        )}
       </section>
 
       {message && (
@@ -971,8 +1067,9 @@ export default function ResourceCentre() {
                       event.target.value,
                   })
                 }
-                placeholder="Resource title"
-                required
+                placeholder={files.length > 0 && !editing ? "Titles will be created from filenames" : "Resource title"}
+                required={editing || files.length === 0}
+                disabled={!editing && files.length > 0}
               />
             </label>
 
@@ -1194,13 +1291,16 @@ export default function ResourceCentre() {
 
               <input
                 type="file"
-                onChange={(event) =>
-                  setFile(
-                    event.target.files?.[0] ??
-                      null,
-                  )
-                }
+                multiple={!editing}
+                onChange={(event) => {
+                  const selected = Array.from(event.target.files ?? [])
+                  if (editing) setFile(selected[0] ?? null)
+                  else setFiles(selected)
+                }}
               />
+              {!editing && files.length > 0 && (
+                <small>{files.length} file{files.length === 1 ? '' : 's'} selected. OLP detects a single 4-digit exam year in each filename and groups it automatically.</small>
+              )}
 
               {editing?.file_name &&
                 !file && (
@@ -1417,10 +1517,19 @@ export default function ResourceCentre() {
           {!loading &&
             filteredResources.length >
               0 && (
-              <div className="resource-list">
-                {filteredResources.map(
-                  (resource) => (
-                    <article
+              <div className="academic-library">
+                {Array.from(resourceGroups.entries()).map(([className, subjectMap]) => (
+                  <section className="academic-class" key={className}>
+                    <div className="academic-class-heading"><FolderOpen size={20} /><div><strong>{className}</strong><small>{Array.from(subjectMap.values()).reduce((n, years) => n + Array.from(years.values()).reduce((m, items) => m + items.length, 0), 0)} resources</small></div></div>
+                    {Array.from(subjectMap.entries()).map(([subject, yearMap]) => (
+                      <div className="academic-subject" key={subject}>
+                        <h4>{subject}</h4>
+                        {Array.from(yearMap.entries()).sort(([a],[b]) => b.localeCompare(a)).map(([year, yearResources]) => (
+                          <details className="academic-year" key={year} open>
+                            <summary><span>{year}</span><small>{yearResources.length} item{yearResources.length === 1 ? '' : 's'}</small></summary>
+                            <div className="resource-list">
+                              {yearResources.map((resource) => (
+<article
                       className="resource-item"
                       key={resource.id}
                     >
@@ -1566,13 +1675,19 @@ export default function ResourceCentre() {
                         )}
                       </div>
                     </article>
-                  ),
-                )}
+                              ))}
+                            </div>
+                          </details>
+                        ))}
+                      </div>
+                    ))}
+                  </section>
+                ))}
               </div>
             )}
         </div>
 
-        <div className="panel quick">
+        {currentRole !== 'student' && <div className="panel quick">
           <h3>Resource Centre</h3>
 
           <button
@@ -1616,7 +1731,7 @@ export default function ResourceCentre() {
               <small>Published</small>
             </div>
           </div>
-        </div>
+        </div>}
       </section>
     </main>
   )
