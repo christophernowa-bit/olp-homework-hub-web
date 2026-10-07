@@ -196,23 +196,29 @@ function TeacherAssignments({
 
   async function load(uid: string) {
     const [classResult, subjectResult, assignmentResult] = await Promise.all([
-      supabase
-        .from('classes')
-        .select('id,name,curriculum,level,academic_year,created_by,is_active')
-        .eq('created_by', uid)
-        .order('created_at', { ascending: false }),
+      (() => {
+        const query = supabase
+          .from('classes')
+          .select('id,name,curriculum,level,academic_year,created_by,is_active')
+          .order('created_at', { ascending: false })
+        return workspaceRole === 'platform_owner' ? query : query.eq('created_by', uid)
+      })(),
 
-      supabase
-        .from('class_subjects')
-        .select('id,class_id,name')
-        .eq('created_by', uid)
-        .order('name'),
+      (() => {
+        const query = supabase
+          .from('class_subjects')
+          .select('id,class_id,name')
+          .order('name')
+        return workspaceRole === 'platform_owner' ? query : query.eq('created_by', uid)
+      })(),
 
-      supabase
-        .from('assignments')
-        .select('*')
-        .eq('created_by', uid)
-        .order('created_at', { ascending: false }),
+      (() => {
+        const query = supabase
+          .from('assignments')
+          .select('*')
+          .order('created_at', { ascending: false })
+        return workspaceRole === 'platform_owner' ? query : query.eq('created_by', uid)
+      })(),
     ])
 
     if (classResult.error) throw classResult.error

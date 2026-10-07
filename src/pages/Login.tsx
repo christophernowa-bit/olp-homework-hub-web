@@ -6,7 +6,7 @@ type ViewMode = 'signin' | 'signup' | 'forgot' | 'recovery'
 type SignupRole = 'teacher' | 'student'
 
 export default function Login() {
-  const [view, setView] = useState<ViewMode>('signin')
+  const [view, setView] = useState<ViewMode>(() => new URLSearchParams(window.location.search).get('view') === 'signup' ? 'signup' : 'signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
@@ -50,7 +50,7 @@ export default function Login() {
         password,
       })
       if (error) throw error
-      window.location.href = '/'
+      window.location.href = '/dashboard'
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Unable to sign in.')
     } finally {
