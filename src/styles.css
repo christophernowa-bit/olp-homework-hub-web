@@ -3111,3 +3111,23 @@
 .academic-year-strip span { color: #64748b; }
 .academic-library-path { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; margin-bottom: 10px; background: #f8fafc; border: 1px solid #e5eaf1; border-radius: 10px; color: #334155; }
 @media (max-width: 700px) { .academic-class-heading, .academic-subject { padding: 13px; } .academic-year-strip { width: 100%; justify-content: space-between; } }
+
+/* v11.1 Academic Library progressive Resource Centre */
+.academic-browser { display: grid; gap: 14px; }
+.academic-browser-card { width: 100%; display: flex; align-items: center; gap: 14px; padding: 18px; border: 1px solid #dbe3ef; border-radius: 16px; background: #fff; text-align: left; cursor: pointer; }
+.academic-browser-card span { display: grid; gap: 3px; }
+.academic-browser-card strong { font-size: 1rem; }
+.academic-browser-card small { color: #6b778c; }
+.academic-browser-stage { display: grid; gap: 16px; }
+.academic-back { justify-self: start; border: 0; background: transparent; font-weight: 700; cursor: pointer; padding: 4px 0; }
+.academic-chip-grid, .academic-year-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(150px,1fr)); gap: 10px; }
+.academic-subject-chip, .academic-year-card { display: flex; align-items: center; gap: 9px; min-height: 54px; padding: 12px 14px; border: 1px solid #dbe3ef; border-radius: 14px; background: #fff; cursor: pointer; text-align: left; }
+.academic-subject-chip span { flex: 1; font-weight: 750; }
+.academic-subject-chip small { min-width: 24px; text-align: center; }
+.academic-year-card { display: grid; gap: 2px; }
+.academic-year-card strong { font-size: 1rem; }
+.academic-year-card small { color: #6b778c; }
+.academic-stage-heading p { margin: 3px 0 0; color: #6b778c; }
+.compact-resource-list { display: grid; gap: 8px; }
+.compact-resource { padding: 12px 14px; border-radius: 12px; }
+@media (max-width: 640px) { .academic-chip-grid, .academic-year-grid { grid-template-columns: 1fr 1fr; } .compact-resource { align-items: flex-start; } }
