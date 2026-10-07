@@ -23,6 +23,7 @@ type ClassRow = {
   name: string
   created_by: string
   is_active: boolean
+  academic_year: number | null
 }
 
 type SubjectRow = {
@@ -307,7 +308,7 @@ export default function Exams() {
           .order('created_at', { ascending: false }),
         supabase
           .from('classes')
-          .select('id,name,created_by,is_active')
+          .select('id,name,created_by,is_active,academic_year')
           .order('name'),
         supabase
           .from('class_subjects')
@@ -628,7 +629,7 @@ export default function Exams() {
       await Promise.all([
         supabase
           .from('classes')
-          .select('id,name,created_by,is_active')
+          .select('id,name,created_by,is_active,academic_year')
           .eq('created_by', uid)
           .order('name'),
         supabase
@@ -2197,10 +2198,10 @@ export default function Exams() {
               </p>
             </div>
           ) : (
-            <div className="exam-subject-groups">
+            <div className="exam-subject-groups academic-library">
               {Object.entries(studentExamGroups).map(([subject, subjectExams]) => (
                 <section className="exam-subject-group" key={subject}>
-                  <h4>{subject}</h4>
+                  <div className="academic-library-path"><strong>{classNameForStudent(subjectExams[0]?.class_id ?? '')}</strong><span>›</span><strong>{subject}</strong><span>›</span><strong>{classes.find((item) => item.id === subjectExams[0]?.class_id)?.academic_year ?? new Date().getFullYear()}</strong></div>
                   <div className="assignment-list">
                     {subjectExams.map((exam) => {
                       const attempt = studentAttemptFor(exam.id)
@@ -2838,6 +2839,10 @@ export default function Exams() {
           </div>
           <div className="assignment-subject-tabs">
             {navigationSubjects.map((subject) => <button key={subject.id} type="button" className={selectedSubjectId === subject.id ? 'active' : ''} onClick={() => setSelectedSubjectId(subject.id)}>{subject.name}</button>)}
+          </div>
+          <div className="academic-year-strip">
+            <span>Academic year</span>
+            <strong>{classes.find((item) => item.id === selectedClassId)?.academic_year ?? new Date().getFullYear()}</strong>
           </div>
         </div>
 

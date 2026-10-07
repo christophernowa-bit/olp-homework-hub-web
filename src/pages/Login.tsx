@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GraduationCap, Lock, Mail, UserRound } from 'lucide-react'
+import { Eye, EyeOff, GraduationCap, Lock, Mail, UserRound } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 type ViewMode = 'signin' | 'signup' | 'forgot' | 'recovery'
@@ -20,6 +20,11 @@ export default function Login() {
   const [message, setMessage] = useState('')
   const [success, setSuccess] = useState('')
   const [loading, setLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showSignupPassword, setShowSignupPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [showNewPassword, setShowNewPassword] = useState(false)
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false)
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
@@ -182,7 +187,7 @@ export default function Login() {
                 Password
                 <div className="login-input">
                   <Lock size={18} />
-                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" placeholder="Your password" />
+                  <div className="password-field"><input type={showPassword ? "text" : "password"} value={password} onChange={(e) => setPassword(e.target.value)} required autoComplete="current-password" placeholder="Your password" /><button type="button" className="password-toggle" onClick={() => setShowPassword((v) => !v)} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
                 </div>
               </label>
 
@@ -249,7 +254,7 @@ export default function Login() {
                 Password
                 <div className="login-input">
                   <Lock size={18} />
-                  <input type="password" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required minLength={8} autoComplete="new-password" placeholder="At least 8 characters" />
+                  <div className="password-field"><input type={showSignupPassword ? "text" : "password"} value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required minLength={8} autoComplete="new-password" placeholder="At least 8 characters" /><button type="button" className="password-toggle" onClick={() => setShowSignupPassword((v) => !v)} aria-label={showSignupPassword ? "Hide password" : "Show password"}>{showSignupPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
                 </div>
               </label>
 
@@ -257,7 +262,7 @@ export default function Login() {
                 Confirm password
                 <div className="login-input">
                   <Lock size={18} />
-                  <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} autoComplete="new-password" placeholder="Repeat your password" />
+                  <div className="password-field"><input type={showConfirmPassword ? "text" : "password"} value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required minLength={8} autoComplete="new-password" placeholder="Repeat your password" /><button type="button" className="password-toggle" onClick={() => setShowConfirmPassword((v) => !v)} aria-label={showConfirmPassword ? "Hide password" : "Show password"}>{showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
                 </div>
               </label>
 
@@ -306,7 +311,7 @@ export default function Login() {
                 New password
                 <div className="login-input">
                   <Lock size={18} />
-                  <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} autoComplete="new-password" />
+                  <div className="password-field"><input type={showNewPassword ? "text" : "password"} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8} autoComplete="new-password" /><button type="button" className="password-toggle" onClick={() => setShowNewPassword((v) => !v)} aria-label={showNewPassword ? "Hide password" : "Show password"}>{showNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
                 </div>
               </label>
 
@@ -314,7 +319,7 @@ export default function Login() {
                 Confirm new password
                 <div className="login-input">
                   <Lock size={18} />
-                  <input type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} required minLength={8} autoComplete="new-password" />
+                  <div className="password-field"><input type={showConfirmNewPassword ? "text" : "password"} value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} required minLength={8} autoComplete="new-password" /><button type="button" className="password-toggle" onClick={() => setShowConfirmNewPassword((v) => !v)} aria-label={showConfirmNewPassword ? "Hide password" : "Show password"}>{showConfirmNewPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
                 </div>
               </label>
 

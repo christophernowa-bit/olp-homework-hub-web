@@ -986,6 +986,10 @@ function TeacherAssignments({
               </button>
             ))}
           </div>
+          <div className="academic-year-strip">
+            <span>Academic year</span>
+            <strong>{classes.find((item) => item.id === selectedClassId)?.academic_year ?? new Date().getFullYear()}</strong>
+          </div>
         </div>
 
         <div className="panel-heading assignment-list-heading">
@@ -1639,6 +1643,11 @@ function StudentAssignments() {
                 </button>
               ))}
             </div>
+            <div className="academic-year-strip">
+              <span>Academic year</span>
+              <strong>{classes.find((item) => item.id === selectedClassId)?.academic_year ?? new Date().getFullYear()}</strong>
+            </div>
+
 
             <div className="assignment-list">
               {visibleStudentAssignments.map((assignment) => {
