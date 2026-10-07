@@ -1894,7 +1894,7 @@ export default function Exams() {
                 <p>{studentRunnerExam.instructions || 'Answer all questions carefully.'}</p>
               </div>
               <span className={`assignment-status ${studentReadOnly ? 'submitted' : 'published'}`}>
-                {studentReadOnly ? 'Submitted · read only' : 'In progress'}
+                {studentAttempt.status === 'returned' ? 'Marked · returned' : studentReadOnly ? 'Submitted · awaiting marking' : 'In progress'}
               </span>
             </div>
             <div className="exam-review-summary">
@@ -1912,6 +1912,24 @@ export default function Exams() {
               )}
             </div>
           </section>
+
+          {studentAttempt.status === 'returned' && studentAttempt.final_mark != null && (
+            <section className="panel exam-student-result" aria-live="polite">
+              <div>
+                <p className="eyebrow">RESULT RETURNED</p>
+                <h2>{studentAttempt.final_mark} / {studentRunnerExam.total_marks}</h2>
+                <p>Your teacher has completed the review. Your submitted answers remain read-only.</p>
+              </div>
+              <CheckCircle2 size={34} aria-hidden="true" />
+            </section>
+          )}
+
+          {studentAttempt.status !== 'returned' && studentReadOnly && (
+            <section className="panel exam-student-awaiting" aria-live="polite">
+              <strong>Submission received</strong>
+              <p>Your answers are locked while your teacher reviews the paper. Your result will appear here after it is returned.</p>
+            </section>
+          )}
 
           <section className="exam-question-list">
             {questions.map((question) => {

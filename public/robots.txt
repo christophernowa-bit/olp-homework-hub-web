@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /classes
+Disallow: /assignments
+Disallow: /exams
+Disallow: /discussions
+Disallow: /resources
+Disallow: /settings
+Disallow: /owner
+
+Sitemap: https://olp-homework-hub-web.olphomeworkhub.workers.dev/sitemap.xml

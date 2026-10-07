@@ -149,6 +149,20 @@ export default function Landing() {
         </article>
       </section>
 
+      <section className="landing-section landing-assessment" id="assessments">
+        <div className="landing-section-heading">
+          <p className="landing-kicker-text">ASSESSMENTS FROM START TO FINISH</p>
+          <h2>A clearer journey for teachers and students.</h2>
+          <p>Build a paper, publish it to the right class, collect student work, review marking and return the result from the same workspace.</p>
+        </div>
+        <div className="landing-assessment-flow" aria-label="OLP assessment workflow">
+          <article><span>01</span><strong>Create</strong><p>Build structured questions and add the marking key.</p></article>
+          <article><span>02</span><strong>Preview & publish</strong><p>Check the student view before releasing the assessment.</p></article>
+          <article><span>03</span><strong>Complete & submit</strong><p>Students work securely and submit from their own account.</p></article>
+          <article><span>04</span><strong>Review & return</strong><p>Teachers review marking before the final result is returned.</p></article>
+        </div>
+      </section>
+
       <section className="landing-section landing-how" id="how-it-works">
         <div className="landing-section-heading">
           <p className="landing-kicker-text">HOW IT WORKS</p>
