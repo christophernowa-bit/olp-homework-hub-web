@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Lock, MessageCircle, Pin, Plus, RotateCcw, Search, Send, Trash2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import './Discussions.compact.css'
 
 type UserRole = 'platform_owner' | 'teacher' | 'student' | 'admin' | 'parent'
 type ClassRow = { id:string; name:string; created_by:string; is_active:boolean }
@@ -105,9 +106,16 @@ export default function Discussions() {
     e.preventDefault(); if(!selected||!reply.trim()) return
     try{
       setBusy(true); setError('')
-      const {error:insertError}=await supabase.from('discussion_posts').insert({discussion_id:selected.id,created_by:userId,body:reply.trim()})
+      const {data:createdPost,error:insertError}=await supabase.from('discussion_posts')
+        .insert({discussion_id:selected.id,created_by:userId,body:reply.trim()})
+        .select('*').single()
       if(insertError) throw insertError
-      setReply(''); await loadAll()
+      // Update this thread immediately after the database confirms the insert.
+      // Deduplicate by database ID if a subsequent refresh also loads this reply.
+      setPosts(current => current.some(post => post.id === createdPost.id)
+        ? current
+        : [...current, createdPost as PostRow])
+      setReply('')
     }catch(err){setError(err instanceof Error?err.message:'Could not post reply.')}finally{setBusy(false)}
   }
 
