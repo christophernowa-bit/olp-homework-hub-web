@@ -1,0 +1,33 @@
+/* OLP v11.3: discussion-only compact typography and spacing. */
+.discussions-page { font-size: 13px; }
+.discussions-page .topbar h1 { font-size: clamp(20px, 2.2vw, 26px); }
+.discussions-page .welcome h2 { font-size: clamp(17px, 2vw, 21px); }
+.discussions-page .welcome p,
+.discussions-page .panel-heading p,
+.discussions-page .discussion-thread-head p,
+.discussions-page .discussion-prompt p,
+.discussions-page .discussion-post p,
+.discussions-page .discussion-closed-note,
+.discussions-page .muted { font-size: 13px; line-height: 1.5; }
+.discussions-page .panel-heading h3,
+.discussions-page .discussion-thread-head h3,
+.discussions-page .discussion-replies h3 { font-size: 15px; line-height: 1.35; }
+.discussions-page .discussion-item strong,
+.discussions-page .discussion-post strong { font-size: 13px; }
+.discussions-page small,
+.discussions-page .discussion-item small,
+.discussions-page .discussion-post small,
+.discussions-page .discussion-status { font-size: 11px; }
+.discussions-page button,
+.discussions-page input,
+.discussions-page textarea,
+.discussions-page select,
+.discussions-page label { font-size: 13px; }
+.discussions-page .discussion-item { padding: 10px 12px; }
+.discussions-page .discussion-post { padding: 10px 12px; }
+.discussions-page .discussion-prompt { padding: 12px; }
+.discussions-page .discussion-reply textarea { line-height: 1.5; }
+@media (max-width: 600px) {
+  .discussions-page .discussion-item,
+  .discussions-page .discussion-post { padding: 9px 10px; }
+}

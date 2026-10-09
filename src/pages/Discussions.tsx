@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Lock, MessageCircle, Pin, Plus, RotateCcw, Search, Send, Trash2, X } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import './Discussions.compact.css'
 
 type UserRole = 'platform_owner' | 'teacher' | 'student' | 'admin' | 'parent'
 type ClassRow = { id:string; name:string; created_by:string; is_active:boolean }
@@ -83,6 +84,63 @@ export default function Discussions() {
     finally{setLoading(false)}
   })() },[])
 
+  // Keep other participants' screens in sync through Supabase Postgres Changes.
+  // Reads are made with the signed-in user's existing RLS permissions.
+  useEffect(() => {
+    if (!userId || loading) return
+    let active = true
+
+    const refreshNames = async () => {
+      const result = await supabase.rpc('get_discussion_participant_names')
+      if (active && !result.error) setProfiles((result.data ?? []) as ProfileRow[])
+    }
+
+    const channel = supabase.channel(`olp-discussions-${userId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'discussion_posts' }, async payload => {
+        if (!active) return
+        if (payload.eventType === 'DELETE') {
+          const id = (payload.old as { id?: string }).id
+          if (id) setPosts(current => current.filter(post => post.id !== id))
+          return
+        }
+        const id = (payload.new as { id?: string }).id
+        if (!id) return
+        // Query again rather than trusting a broadcast payload for access control.
+        const result = await supabase.from('discussion_posts').select('*').eq('id', id).maybeSingle()
+        if (!active || result.error || !result.data) return
+        const incoming = result.data as PostRow
+        setPosts(current => [...current.filter(post => post.id !== incoming.id), incoming]
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()))
+        void refreshNames()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'discussions' }, async payload => {
+        if (!active) return
+        if (payload.eventType === 'DELETE') {
+          const id = (payload.old as { id?: string }).id
+          if (id) {
+            setDiscussions(current => current.filter(d => d.id !== id))
+            setPosts(current => current.filter(post => post.discussion_id !== id))
+            setSelectedId(current => current === id ? null : current)
+          }
+          return
+        }
+        const id = (payload.new as { id?: string }).id
+        if (!id) return
+        const result = await supabase.from('discussions').select('*').eq('id', id).maybeSingle()
+        if (!active || result.error || !result.data) return
+        const incoming = result.data as DiscussionRow
+        setDiscussions(current => [...current.filter(d => d.id !== incoming.id), incoming])
+        void refreshNames()
+      })
+      .subscribe(status => {
+        if (active && (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT')) {
+          console.warn('Discussion live updates disconnected:', status)
+        }
+      })
+
+    return () => { active = false; void supabase.removeChannel(channel) }
+  }, [userId, loading])
+
   function openCreate(){
     const first=classes.find(c=>c.is_active)??classes[0]
     const firstSubject=subjects.find(s=>s.class_id===first?.id)
@@ -105,9 +163,16 @@ export default function Discussions() {
     e.preventDefault(); if(!selected||!reply.trim()) return
     try{
       setBusy(true); setError('')
-      const {error:insertError}=await supabase.from('discussion_posts').insert({discussion_id:selected.id,created_by:userId,body:reply.trim()})
+      const {data:createdPost,error:insertError}=await supabase.from('discussion_posts')
+        .insert({discussion_id:selected.id,created_by:userId,body:reply.trim()})
+        .select('*').single()
       if(insertError) throw insertError
-      setReply(''); await loadAll()
+      // Update this thread immediately after the database confirms the insert.
+      // Deduplicate by database ID if a subsequent refresh also loads this reply.
+      setPosts(current => current.some(post => post.id === createdPost.id)
+        ? current
+        : [...current, createdPost as PostRow])
+      setReply('')
     }catch(err){setError(err instanceof Error?err.message:'Could not post reply.')}finally{setBusy(false)}
   }
 
