@@ -198,18 +198,26 @@ function TeacherClasses({ workspaceRole }: { workspaceRole: 'teacher' | 'platfor
     const classRows = (classResult.data ?? []) as ClassRow[]
     setClasses(classRows)
 
-    const subjectQuery = supabase
-      .from('class_subjects')
-      .select('id,class_id,name,description')
-      .order('created_at')
+    // Scope both supporting queries to classes visible to this workspace.
+    // This reduces unnecessary exposure even if a database SELECT policy is broad.
+    const classIds = classRows.map((item) => item.id)
+    if (classIds.length === 0) {
+      setSubjects([])
+      setEnrolments([])
+      setCreatorNames({})
+      return
+    }
 
     const [subjectResult, enrolmentResult] = await Promise.all([
-      workspaceRole === 'platform_owner'
-        ? subjectQuery
-        : subjectQuery.eq('created_by', uid),
+      supabase
+        .from('class_subjects')
+        .select('id,class_id,name,description')
+        .in('class_id', classIds)
+        .order('created_at'),
       supabase
         .from('class_enrolments')
-        .select('class_id,status'),
+        .select('class_id,status')
+        .in('class_id', classIds),
     ])
 
     if (subjectResult.error) {
@@ -765,122 +773,7 @@ function TeacherClasses({ workspaceRole }: { workspaceRole: 'teacher' | 'platfor
           </div>
         </section>
 
-        <section className="panel class-detail-hero">
-          <div className="panel-heading">
-            <div>
-              <h3>Class Resources</h3>
-              <p>{canManageSelected ? 'Assign learning materials to the whole class or to a specific subject.' : 'Resources currently assigned by the class teacher.'}</p>
-            </div>
-          </div>
 
-          {canManageSelected ? (
-            <>
-              <div className="resource-form">
-                <label>
-                  <span>Assign to</span>
-                  <select value={resourceSubjectId} onChange={(e) => setResourceSubjectId(e.target.value)}>
-                    <option value="">Whole class</option>
-                    {selectedSubjects.map((subject) => (
-                      <option key={subject.id} value={subject.id}>{subject.name}</option>
-                    ))}
-                  </select>
-                </label>
-
-                <label>
-                  <span>Find a resource</span>
-                  <input value={resourceSearch} onChange={(e) => setResourceSearch(e.target.value)} placeholder="Search title, subject or type" />
-                </label>
-              </div>
-
-              <div className="content-grid">
-                <div>
-                  <div className="panel-heading"><div><h3>Available Resources</h3><p>{filteredAvailableResources.length} available</p></div></div>
-                  {resourcesLoading ? (
-                    <div className="empty-state class-empty"><BookOpen size={30} /><strong>Loading resources...</strong></div>
-                  ) : filteredAvailableResources.length === 0 ? (
-                    <div className="empty-state class-empty"><BookOpen size={30} /><strong>No resources available</strong><p>Add or publish resources in the Resource Centre first.</p></div>
-                  ) : (
-                    <div className="resource-list">
-                      {filteredAvailableResources.map((resource) => {
-                        const alreadyAssigned = resourceAssignments.some(
-                          (assignment) => assignment.resource_id === resource.id && (assignment.subject_id ?? '') === resourceSubjectId,
-                        )
-                        return (
-                          <div className="resource-item" key={resource.id}>
-                            <div className="resource-item-content">
-                              <div className="resource-item-title">
-                                <strong>{resource.title}</strong>
-                                <span className={`resource-status ${resource.is_published ? 'published' : 'draft'}`}>{resource.is_published ? 'Published' : 'Draft'}</span>
-                              </div>
-                              <p>{[resource.subject, resource.resource_type, resource.year].filter(Boolean).join(' · ') || 'Learning resource'}</p>
-                              {resource.description && <small>{resource.description}</small>}
-                            </div>
-                            <div className="resource-actions">
-                              <button type="button" disabled={alreadyAssigned || resourceBusyId === resource.id} onClick={() => void assignResource(resource)}>
-                                <Plus size={14} /> {alreadyAssigned ? 'Assigned' : resourceBusyId === resource.id ? 'Assigning...' : 'Assign'}
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <div className="panel-heading"><div><h3>Assigned Resources</h3><p>{resourceAssignments.length} assigned</p></div></div>
-                  {resourceAssignments.length === 0 ? (
-                    <div className="empty-state class-empty"><BookOpen size={30} /><strong>No resources assigned</strong><p>Choose a resource from the available list.</p></div>
-                  ) : (
-                    <div className="resource-list">
-                      {resourceAssignments.map((assignment) => {
-                        const resource = resourceForAssignment(assignment)
-                        return (
-                          <div className="resource-item" key={assignment.id}>
-                            <div className="resource-item-content">
-                              <div className="resource-item-title">
-                                <strong>{resource?.title ?? 'Resource'}</strong>
-                                <span className={`resource-status ${assignment.is_visible ? 'published' : 'draft'}`}>{assignment.is_visible ? 'Visible' : 'Hidden'}</span>
-                              </div>
-                              <p>{assignmentSubjectName(assignment.subject_id)}</p>
-                              {resource?.resource_type && <small>{resource.resource_type}</small>}
-                            </div>
-                            <div className="resource-actions">
-                              <button type="button" disabled={resourceBusyId === assignment.id} onClick={() => void toggleResourceVisibility(assignment)}>{assignment.is_visible ? 'Hide' : 'Show'}</button>
-                              <button type="button" disabled={resourceBusyId === assignment.id} onClick={() => void removeResourceAssignment(assignment)}><Trash2 size={14} /> Remove</button>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          ) : resourcesLoading ? (
-            <div className="empty-state class-empty"><BookOpen size={30} /><strong>Loading assigned resources...</strong></div>
-          ) : resourceAssignments.length === 0 ? (
-            <div className="empty-state class-empty"><BookOpen size={30} /><strong>No resources assigned</strong><p>This teacher has not assigned resources to the class yet.</p></div>
-          ) : (
-            <div className="resource-list">
-              {resourceAssignments.map((assignment) => {
-                const resource = resourceForAssignment(assignment)
-                return (
-                  <div className="resource-item" key={assignment.id}>
-                    <div className="resource-item-content">
-                      <div className="resource-item-title">
-                        <strong>{resource?.title ?? 'Resource'}</strong>
-                        <span className={`resource-status ${assignment.is_visible ? 'published' : 'draft'}`}>{assignment.is_visible ? 'Visible' : 'Hidden'}</span>
-                      </div>
-                      <p>{assignmentSubjectName(assignment.subject_id)}</p>
-                      {resource?.resource_type && <small>{resource.resource_type}</small>}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </section>
       </main>
     )
   }
