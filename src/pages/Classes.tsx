@@ -198,18 +198,26 @@ function TeacherClasses({ workspaceRole }: { workspaceRole: 'teacher' | 'platfor
     const classRows = (classResult.data ?? []) as ClassRow[]
     setClasses(classRows)
 
-    const subjectQuery = supabase
-      .from('class_subjects')
-      .select('id,class_id,name,description')
-      .order('created_at')
+    // Scope both supporting queries to classes visible to this workspace.
+    // This reduces unnecessary exposure even if a database SELECT policy is broad.
+    const classIds = classRows.map((item) => item.id)
+    if (classIds.length === 0) {
+      setSubjects([])
+      setEnrolments([])
+      setCreatorNames({})
+      return
+    }
 
     const [subjectResult, enrolmentResult] = await Promise.all([
-      workspaceRole === 'platform_owner'
-        ? subjectQuery
-        : subjectQuery.eq('created_by', uid),
+      supabase
+        .from('class_subjects')
+        .select('id,class_id,name,description')
+        .in('class_id', classIds)
+        .order('created_at'),
       supabase
         .from('class_enrolments')
-        .select('class_id,status'),
+        .select('class_id,status')
+        .in('class_id', classIds),
     ])
 
     if (subjectResult.error) {
