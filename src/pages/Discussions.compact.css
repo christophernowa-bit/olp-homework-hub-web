@@ -31,3 +31,10 @@
   .discussions-page .discussion-item,
   .discussions-page .discussion-post { padding: 9px 10px; }
 }
+
+/* Discussion screenshot attachments */
+.discussion-image-picker { display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:0.9rem; margin:8px 0; }
+.discussion-image-picker input { max-width:100%; }
+.discussion-screenshot-preview { display:flex; flex-direction:column; align-items:flex-start; gap:8px; margin:8px 0; }
+.discussion-screenshot-preview img,.discussion-attached-image { display:block; max-width:min(100%,520px); max-height:350px; object-fit:contain; border-radius:8px; border:1px solid #d5dce6; margin:8px 0; }
+.discussion-screenshot-preview button { padding:5px 10px; }
