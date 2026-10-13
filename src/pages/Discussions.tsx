@@ -9,6 +9,17 @@ type SubjectRow = { id:string; class_id:string; name:string }
 type DiscussionRow = { id:string; class_id:string; subject_id:string; created_by:string; title:string; body:string; is_pinned:boolean; status:'open'|'closed'; created_at:string; updated_at:string; closed_at:string|null; closed_by:string|null }
 type PostRow = { id:string; discussion_id:string; created_by:string; body:string; parent_post_id:string|null; created_at:string; updated_at:string }
 type ProfileRow = { id:string; full_name:string|null }
+type DiscussionImage = { id:string; discussion_id:string; post_id:string|null; storage_path:string }
+const MAX_SCREENSHOT_BYTES = 5 * 1024 * 1024
+function validateScreenshot(file:File) {
+  if(!['image/png','image/jpeg','image/webp'].includes(file.type)) throw new Error('Use a PNG, JPG or WebP screenshot.')
+  if(file.size>MAX_SCREENSHOT_BYTES) throw new Error('Screenshots must be 5 MB or smaller.')
+}
+function ScreenshotPreview({file,onRemove}:{file:File|null;onRemove:()=>void}) {
+  const [url,setUrl]=useState('')
+  useEffect(()=>{if(!file){setUrl('');return}const objectUrl=URL.createObjectURL(file);setUrl(objectUrl);return ()=>URL.revokeObjectURL(objectUrl)},[file])
+  return file?<div className="discussion-screenshot-preview">{url&&<img src={url} alt="Screenshot ready to post"/>}<button type="button" onClick={onRemove}>Remove screenshot</button></div>:null
+}
 
 const blankForm = { classId:'', subjectId:'', title:'', body:'' }
 const formatDate = (value:string) => new Date(value).toLocaleString()
@@ -26,6 +37,27 @@ export default function Discussions() {
   const [showForm,setShowForm] = useState(false)
   const [form,setForm] = useState(blankForm)
   const [reply,setReply] = useState('')
+  const [promptScreenshot,setPromptScreenshot] = useState<File|null>(null)
+  const [replyScreenshot,setReplyScreenshot] = useState<File|null>(null)
+  const [images,setImages] = useState<DiscussionImage[]>([])
+  const [imageUrls,setImageUrls] = useState<Record<string,string>>({})
+  function acceptScreenshot(file:File,kind:'prompt'|'reply') {
+    try { validateScreenshot(file);(kind==='prompt'?setPromptScreenshot:setReplyScreenshot)(file);setError('') }
+    catch(err){setError(err instanceof Error?err.message:'Invalid screenshot.')}
+  }
+  function handlePaste(e:React.ClipboardEvent<HTMLTextAreaElement>,kind:'prompt'|'reply') {
+    const file=Array.from(e.clipboardData.items).find(item=>item.kind==='file'&&item.type.startsWith('image/'))?.getAsFile()
+    if(file){e.preventDefault();acceptScreenshot(file,kind)}
+  }
+  async function uploadScreenshot(file:File,discussionId:string,postId:string|null) {
+    validateScreenshot(file)
+    const extension=file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg'
+    const storagePath=`${discussionId}/${userId}/${crypto.randomUUID()}.${extension}`
+    const {error:uploadError}=await supabase.storage.from('discussion-images').upload(storagePath,file,{contentType:file.type,upsert:false})
+    if(uploadError) throw uploadError
+    const {error:recordError}=await supabase.from('discussion_images').insert({discussion_id:discussionId,post_id:postId,storage_path:storagePath,uploaded_by:userId})
+    if(recordError){await supabase.storage.from('discussion-images').remove([storagePath]);throw recordError}
+  }
   const [loading,setLoading] = useState(true)
   const [busy,setBusy] = useState(false)
   const [error,setError] = useState('')
@@ -50,20 +82,29 @@ export default function Discussions() {
   const personName=(id:string)=>profiles.find(p=>p.id===id)?.full_name || (id===userId?'You':'Participant')
 
   async function loadAll() {
-    const [classResult,subjectResult,discussionResult,postResult] = await Promise.all([
+    const [classResult,subjectResult,discussionResult,postResult,imageResult] = await Promise.all([
       supabase.from('classes').select('id,name,created_by,is_active').order('name'),
       supabase.from('class_subjects').select('id,class_id,name').order('name'),
       supabase.from('discussions').select('*').order('created_at',{ascending:false}),
       supabase.from('discussion_posts').select('*').order('created_at',{ascending:true}),
+      supabase.from('discussion_images').select('id,discussion_id,post_id,storage_path'),
     ])
     if(classResult.error) throw classResult.error
     if(subjectResult.error) throw subjectResult.error
     if(discussionResult.error) throw discussionResult.error
     if(postResult.error) throw postResult.error
+    if(imageResult.error) throw imageResult.error
     const loadedClasses=(classResult.data??[]) as ClassRow[]
     const loadedSubjects=(subjectResult.data??[]) as SubjectRow[]
     const loadedDiscussions=(discussionResult.data??[]) as DiscussionRow[]
     const loadedPosts=(postResult.data??[]) as PostRow[]
+    const imageRows=(imageResult.data??[]) as DiscussionImage[]
+    setImages(imageRows)
+    const signed=await Promise.all(imageRows.map(async img=>{
+      const {data}=await supabase.storage.from('discussion-images').createSignedUrl(img.storage_path,3600)
+      return [img.id,data?.signedUrl??''] as const
+    }))
+    setImageUrls(Object.fromEntries(signed))
     setClasses(loadedClasses); setSubjects(loadedSubjects); setDiscussions(loadedDiscussions); setPosts(loadedPosts)
     const pr=await supabase.rpc('get_discussion_participant_names')
     if(!pr.error) setProfiles((pr.data??[]) as ProfileRow[])
@@ -145,7 +186,7 @@ export default function Discussions() {
     const first=classes.find(c=>c.is_active)??classes[0]
     const firstSubject=subjects.find(s=>s.class_id===first?.id)
     setForm({classId:first?.id??'',subjectId:firstSubject?.id??'',title:'',body:''})
-    setShowForm(true); setError(''); setMessage('')
+    setPromptScreenshot(null);setShowForm(true); setError(''); setMessage('')
   }
 
   async function createDiscussion(e:React.FormEvent){
@@ -155,12 +196,14 @@ export default function Discussions() {
       setBusy(true); setError('')
       const {data,error:insertError}=await supabase.from('discussions').insert({class_id:form.classId,subject_id:form.subjectId,created_by:userId,title:form.title.trim(),body:form.body.trim()}).select('*').single()
       if(insertError) throw insertError
-      setShowForm(false); setForm(blankForm); setMessage('Discussion started.'); await loadAll(); setSelectedId(data.id)
+      let notice='Discussion started.'
+      if(promptScreenshot){try{await uploadScreenshot(promptScreenshot,data.id,null)}catch(uploadError){notice='Discussion started, but screenshot upload failed: '+(uploadError instanceof Error?uploadError.message:'Unknown error')}}
+      setPromptScreenshot(null);setShowForm(false); setForm(blankForm); setMessage(notice); await loadAll(); setSelectedId(data.id)
     }catch(err){setError(err instanceof Error?err.message:'Could not start discussion.')}finally{setBusy(false)}
   }
 
   async function addReply(e:React.FormEvent){
-    e.preventDefault(); if(!selected||!reply.trim()) return
+    e.preventDefault(); if(!selected||(!reply.trim()&&!replyScreenshot)) return
     try{
       setBusy(true); setError('')
       const {data:createdPost,error:insertError}=await supabase.from('discussion_posts')
@@ -172,7 +215,11 @@ export default function Discussions() {
       setPosts(current => current.some(post => post.id === createdPost.id)
         ? current
         : [...current, createdPost as PostRow])
-      setReply('')
+      let notice=''
+      if(replyScreenshot){try{await uploadScreenshot(replyScreenshot,selected.id,createdPost.id)}catch(uploadError){notice='Reply posted, but screenshot upload failed: '+(uploadError instanceof Error?uploadError.message:'Unknown error')}}
+      setReply('');setReplyScreenshot(null)
+      await loadAll()
+      if(notice)setMessage(notice)
     }catch(err){setError(err instanceof Error?err.message:'Could not post reply.')}finally{setBusy(false)}
   }
 
@@ -203,7 +250,8 @@ export default function Discussions() {
       <label>Class<select value={form.classId} onChange={e=>{const classId=e.target.value;setForm(f=>({...f,classId,subjectId:subjects.find(s=>s.class_id===classId)?.id??''}))}}><option value="">Select class</option>{classes.filter(c=>c.is_active).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
       <label>Subject<select value={form.subjectId} onChange={e=>setForm(f=>({...f,subjectId:e.target.value}))}><option value="">Select subject</option>{formSubjects.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
       <label className="discussion-wide">Discussion title<input value={form.title} maxLength={200} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="e.g. How do food chains change?"/></label>
-      <label className="discussion-wide">Opening question / prompt<textarea value={form.body} maxLength={10000} onChange={e=>setForm(f=>({...f,body:e.target.value}))} rows={5} placeholder="Write the question or prompt learners should discuss."/></label>
+      <label className="discussion-wide">Opening question / prompt<textarea value={form.body} maxLength={10000} onChange={e=>setForm(f=>({...f,body:e.target.value}))} rows={5} placeholder="Write the question or prompt learners should discuss." onPaste={e=>handlePaste(e,'prompt')}/></label>
+      <div className="discussion-wide"><label className="discussion-image-picker">Attach screenshot (or paste with Ctrl + V)<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)acceptScreenshot(file,'prompt');e.target.value=''}}/></label><ScreenshotPreview file={promptScreenshot} onRemove={()=>setPromptScreenshot(null)}/></div>
       <div className="discussion-wide discussion-actions"><button type="button" className="secondary" onClick={()=>setShowForm(false)}>Cancel</button><button className="primary" disabled={busy}>Start discussion</button></div>
     </form></section>}
 
@@ -214,9 +262,9 @@ export default function Discussions() {
 
       <div className="panel discussion-thread">{!selected?<div className="empty-state"><MessageCircle size={34}/><strong>Select a discussion</strong><p>Choose a discussion to read and participate.</p></div>:<>
         <div className="discussion-thread-head"><div><div className="discussion-title-row"><h3>{selected.title}</h3><span className={`discussion-status ${selected.status}`}>{selected.status}</span></div><p>{className(selected.class_id)} · {subjectName(selected.subject_id)} · {personName(selected.created_by)}</p></div>{isStaff&&<div className="discussion-controls"><button className="secondary" onClick={togglePin} disabled={busy}><Pin size={16}/>{selected.is_pinned?'Unpin':'Pin'}</button>{selected.status==='open'?<button className="secondary" onClick={()=>setStatus('closed')} disabled={busy}><Lock size={16}/>Close</button>:<button className="secondary" onClick={()=>setStatus('open')} disabled={busy}><RotateCcw size={16}/>Reopen</button>}<button className="secondary danger-button" onClick={deleteDiscussion} disabled={busy}><Trash2 size={16}/>Delete</button></div>}</div>
-        <article className="discussion-prompt"><small>Opening question · {formatDate(selected.created_at)}</small><p>{selected.body}</p></article>
-        <div className="discussion-replies"><h3>Replies ({selectedPosts.length})</h3>{selectedPosts.length===0?<p className="muted">No replies yet.</p>:selectedPosts.map(p=><article className="discussion-post" key={p.id}><div><strong>{personName(p.created_by)}</strong><small>{formatDate(p.created_at)}</small></div><p>{p.body}</p>{(p.created_by===userId||isStaff)&&<button className="discussion-delete-post" onClick={()=>deletePost(p)} title="Delete reply"><Trash2 size={15}/></button>}</article>)}</div>
-        {selected.status==='open'?<form className="discussion-reply" onSubmit={addReply}><textarea value={reply} onChange={e=>setReply(e.target.value)} rows={3} maxLength={10000} placeholder="Write your reply..."/><button className="primary" disabled={busy||!reply.trim()}><Send size={17}/>Post reply</button></form>:<div className="discussion-closed-note"><Lock size={17}/><span>This discussion is closed. Previous contributions remain available to read.</span></div>}
+        <article className="discussion-prompt"><small>Opening question · {formatDate(selected.created_at)}</small><p>{selected.body}</p>{images.filter(img=>img.discussion_id===selected.id&&!img.post_id).map(img=>imageUrls[img.id]&&<a key={img.id} href={imageUrls[img.id]} target="_blank" rel="noreferrer"><img className="discussion-attached-image" src={imageUrls[img.id]} alt="Discussion screenshot"/></a>)}</article>
+        <div className="discussion-replies"><h3>Replies ({selectedPosts.length})</h3>{selectedPosts.length===0?<p className="muted">No replies yet.</p>:selectedPosts.map(p=><article className="discussion-post" key={p.id}><div><strong>{personName(p.created_by)}</strong><small>{formatDate(p.created_at)}</small></div><p>{p.body}</p>{images.filter(img=>img.post_id===p.id).map(img=>imageUrls[img.id]&&<a key={img.id} href={imageUrls[img.id]} target="_blank" rel="noreferrer"><img className="discussion-attached-image" src={imageUrls[img.id]} alt="Reply screenshot"/></a>)}{(p.created_by===userId||isStaff)&&<button className="discussion-delete-post" onClick={()=>deletePost(p)} title="Delete reply"><Trash2 size={15}/></button>}</article>)}</div>
+        {selected.status==='open'?<form className="discussion-reply" onSubmit={addReply}><textarea value={reply} onChange={e=>setReply(e.target.value)} onPaste={e=>handlePaste(e,'reply')} rows={3} maxLength={10000} placeholder="Write your reply or paste a screenshot (Ctrl + V)..."/><label className="discussion-image-picker">Screenshot<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)acceptScreenshot(file,'reply');e.target.value=''}}/></label><ScreenshotPreview file={replyScreenshot} onRemove={()=>setReplyScreenshot(null)}/><button className="primary" disabled={busy||(!reply.trim()&&!replyScreenshot)}><Send size={17}/>Post reply</button></form>:<div className="discussion-closed-note"><Lock size={17}/><span>This discussion is closed. Previous contributions remain available to read.</span></div>}
       </>}</div>
     </section>
   </main>
