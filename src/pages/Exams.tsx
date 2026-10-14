@@ -2099,6 +2099,10 @@ export default function Exams() {
                     </div>
                   )}
 
+                  <p className="muted" style={{ fontSize: '0.82rem', marginTop: '8px' }}>
+                    Changing question type preserves existing options, matching pairs and marking keys.
+                    Select Save question to retain the new type.
+                  </p>
                   <div className="exam-question-review-actions">
                     <span className={`assignment-status ${answerIsComplete(question) ? 'published' : 'draft'}`}>
                       {answerIsComplete(question) ? 'Answered' : 'Not answered'}
@@ -2470,11 +2474,11 @@ export default function Exams() {
                       <span>Question type</span>
                       <select
                         value={question.question_type}
-                        onChange={(event) =>
-                          updateQuestionLocal(question.id, {
-                            question_type: event.target.value as QuestionType,
-                          })
-                        }
+                        onChange={(event) => {
+                          const nextType = event.target.value as QuestionType
+                          // Keep existing options, matches and marking keys when changing type.
+                          updateQuestionLocal(question.id, { question_type: nextType })
+                        }}
                       >
                         {Object.entries(questionLabels).map(([value, label]) => (
                           <option key={value} value={value}>
