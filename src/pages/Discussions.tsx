@@ -54,9 +54,9 @@ export default function Discussions() {
     const extension=file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg'
     const storagePath=`${discussionId}/${userId}/${crypto.randomUUID()}.${extension}`
     const {error:uploadError}=await supabase.storage.from('discussion-images').upload(storagePath,file,{contentType:file.type,upsert:false})
-    if(uploadError) throw uploadError
+    if(uploadError) throw new Error(uploadError.message)
     const {error:recordError}=await supabase.from('discussion_images').insert({discussion_id:discussionId,post_id:postId,storage_path:storagePath,uploaded_by:userId})
-    if(recordError){await supabase.storage.from('discussion-images').remove([storagePath]);throw recordError}
+    if(recordError){await supabase.storage.from('discussion-images').remove([storagePath]);throw new Error(recordError.message)}
   }
   const [loading,setLoading] = useState(true)
   const [busy,setBusy] = useState(false)
@@ -207,7 +207,7 @@ export default function Discussions() {
     try{
       setBusy(true); setError('')
       const {data:createdPost,error:insertError}=await supabase.from('discussion_posts')
-        .insert({discussion_id:selected.id,created_by:userId,body:reply.trim()})
+        .insert({discussion_id:selected.id,created_by:userId,body:reply.trim() || (replyScreenshot ? 'Screenshot attached' : '')})
         .select('*').single()
       if(insertError) throw insertError
       // Update this thread immediately after the database confirms the insert.
