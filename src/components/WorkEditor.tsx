@@ -47,9 +47,14 @@ export const blankGraphSpec = (): GraphSpec => ({
   ],
 })
 
+export type AssignmentQuestionType = 'short_answer' | 'long_answer' | 'multiple_choice' | 'dropdown' | 'matching' | 'structured'
+const assignmentQuestionLabels: Record<AssignmentQuestionType,string> = {
+  short_answer:'Short answer',long_answer:'Long answer',multiple_choice:'Multiple choice',
+  dropdown:'Dropdown',matching:'Matching',structured:'Structured'
+}
 export type WorkBlock =
   | { id: string; type: 'paragraph'; text: string }
-  | { id: string; type: 'question'; text: string }
+  | { id: string; type: 'question'; text: string; questionType?: AssignmentQuestionType; choices?: string[]; matchPairs?: {left:string;right:string}[] }
   | { id: string; type: 'math'; text: string }
   | { id: string; type: 'table'; rows: string[][] }
   | { id: string; type: 'image'; src: string; caption: string }
@@ -161,6 +166,9 @@ export function normaliseWorkDocument(value: unknown, fallbackText = ''): WorkDo
           src?: unknown
           caption?: unknown
           graph?: unknown
+          questionType?: unknown
+          choices?: unknown
+          matchPairs?: unknown
         }
 
         const id = typeof item.id === 'string' && item.id ? item.id : newId()
@@ -183,6 +191,13 @@ export function normaliseWorkDocument(value: unknown, fallbackText = ''): WorkDo
           item.type === 'question' ||
           item.type === 'math'
         ) {
+          if(item.type === 'question') {
+            const questionType = typeof item.questionType === 'string' && item.questionType in assignmentQuestionLabels
+              ? item.questionType as AssignmentQuestionType : 'short_answer'
+            const choices = Array.isArray(item.choices) ? item.choices.filter((v):v is string=>typeof v==='string') : []
+            const matchPairs = Array.isArray(item.matchPairs) ? item.matchPairs.filter((v):v is {left:string;right:string}=>Boolean(v)&&typeof v==='object'&&typeof v.left==='string'&&typeof v.right==='string') : []
+            return { id, type:'question', text, questionType, choices, matchPairs }
+          }
           return { id, type: item.type, text } as WorkBlock
         }
 
@@ -1043,6 +1058,10 @@ export default function WorkEditor({
     )
   }
 
+  function updateQuestion(id:string,patch:Partial<Extract<WorkBlock,{type:'question'}>>) {
+    updateBlocks(value.blocks.map(block=>block.id===id&&block.type==='question'?{...block,...patch}:block))
+  }
+
   function updateTable(id: string, rows: string[][]) {
     updateBlocks(
       value.blocks.map((block) =>
@@ -1309,6 +1328,29 @@ export default function WorkEditor({
                     {block.type === 'math' && 'Maths'}
                   </div>
 
+                  {block.type==='question'&&!readOnly&&(
+                    <div className="work-question-type-controls">
+                      <label>Question type
+                        <select value={block.questionType??'short_answer'} onChange={event=>updateQuestion(block.id,{questionType:event.target.value as AssignmentQuestionType})}>
+                          {Object.entries(assignmentQuestionLabels).map(([type,label])=><option key={type} value={type}>{label}</option>)}
+                        </select>
+                      </label>
+                      {(['multiple_choice','dropdown'] as string[]).includes(block.questionType??'short_answer')&&(
+                        <div><strong>Answer choices</strong>{(block.choices??[]).map((choice,index)=><label key={index}>Option {index+1}
+                          <input value={choice} onChange={event=>updateQuestion(block.id,{choices:(block.choices??[]).map((c,i)=>i===index?event.target.value:c)})}/>
+                        </label>)}
+                        <button type="button" onClick={()=>updateQuestion(block.id,{choices:[...(block.choices??[]),'']})}>+ Add choice</button></div>
+                      )}
+                      {block.questionType==='matching'&&(
+                        <div><strong>Matching pairs</strong>{(block.matchPairs??[]).map((pair,index)=><div key={index}>
+                          <input aria-label="Left item" value={pair.left} placeholder="Left item" onChange={event=>updateQuestion(block.id,{matchPairs:(block.matchPairs??[]).map((p,i)=>i===index?{...p,left:event.target.value}:p)})}/>
+                          <input aria-label="Matching item" value={pair.right} placeholder="Matching item" onChange={event=>updateQuestion(block.id,{matchPairs:(block.matchPairs??[]).map((p,i)=>i===index?{...p,right:event.target.value}:p)})}/>
+                        </div>)}
+                        <button type="button" onClick={()=>updateQuestion(block.id,{matchPairs:[...(block.matchPairs??[]),{left:'',right:''}]})}>+ Add pair</button></div>
+                      )}
+                      <small>Changing type keeps previous choices and matching pairs.</small>
+                    </div>
+                  )}
                   {readOnly ? (
                     <div className="work-editor-read-value">
                       {block.type === 'question' && (
@@ -1715,6 +1757,12 @@ export function QuestionAnswerEditor({
               <span>{block.text}</span>
             </div>
 
+            {(['multiple_choice','dropdown'] as string[]).includes(block.questionType??'short_answer')&&Boolean(block.choices?.length)&&(
+              <div className="qa-answer-choices">{(block.choices??[]).map((choice,i)=><div key={i}>{i+1}. {choice}</div>)}</div>
+            )}
+            {block.questionType==='matching'&&Boolean(block.matchPairs?.length)&&(
+              <div className="qa-answer-choices">{(block.matchPairs??[]).map((pair,i)=><div key={i}>{i+1}. {pair.left}</div>)}</div>
+            )}
             <div className="qa-answer">
               <span className="qa-answer-label">Answer</span>
 
@@ -1754,7 +1802,14 @@ export function QuestionAnswerEditor({
                 </>
               ) : (
                 <>
+                  {(['multiple_choice','dropdown'] as string[]).includes(block.questionType??'short_answer')&&Boolean(block.choices?.length)?(
+                    <select value={answerText} onChange={event=>setAnswer(block.id,event.target.value)}>
+                      <option value="">Select your answer</option>
+                      {(block.choices??[]).map((choice,i)=><option key={i} value={choice}>{choice}</option>)}
+                    </select>
+                  ):null}
                   <textarea
+                    style={(['multiple_choice','dropdown'] as string[]).includes(block.questionType??'short_answer')&&Boolean(block.choices?.length)?{display:'none'}:undefined}
                     ref={(element) => {
                       if (answer) answerRefs.current[answer.id] = element
                     }}
