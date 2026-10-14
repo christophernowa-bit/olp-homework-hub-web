@@ -34,6 +34,8 @@ export default function Discussions() {
   const [profiles,setProfiles] = useState<ProfileRow[]>([])
   const [selectedId,setSelectedId] = useState<string|null>(null)
   const [search,setSearch] = useState('')
+  const [filterClassId,setFilterClassId] = useState('')
+  const [filterSubjectId,setFilterSubjectId] = useState('')
   const [showForm,setShowForm] = useState(false)
   const [form,setForm] = useState(blankForm)
   const [reply,setReply] = useState('')
@@ -67,15 +69,17 @@ export default function Discussions() {
   const selected = discussions.find(d=>d.id===selectedId) ?? null
   const selectedPosts = posts.filter(p=>p.discussion_id===selectedId)
   const formSubjects = subjects.filter(s=>s.class_id===form.classId)
+  const filterSubjects = subjects.filter(s=>s.class_id===filterClassId)
+  const discussionCountForSubject = (subjectId:string) => discussions.filter(d=>d.subject_id===subjectId).length
   const visible = useMemo(()=>{
     const q=search.trim().toLowerCase()
-    return [...discussions].sort((a,b)=>Number(b.is_pinned)-Number(a.is_pinned)||new Date(b.updated_at).getTime()-new Date(a.updated_at).getTime()).filter(d=>{
+    return [...discussions].filter(d=>(!filterClassId||d.class_id===filterClassId)&&(!filterSubjectId||d.subject_id===filterSubjectId)).sort((a,b)=>Number(b.is_pinned)-Number(a.is_pinned)||new Date(b.updated_at).getTime()-new Date(a.updated_at).getTime()).filter(d=>{
       if(!q) return true
       const c=classes.find(x=>x.id===d.class_id)?.name ?? ''
       const s=subjects.find(x=>x.id===d.subject_id)?.name ?? ''
       return [d.title,d.body,c,s,d.status].join(' ').toLowerCase().includes(q)
     })
-  },[discussions,classes,subjects,search])
+  },[discussions,classes,subjects,search,filterClassId,filterSubjectId])
 
   const className=(id:string)=>classes.find(c=>c.id===id)?.name ?? 'Class'
   const subjectName=(id:string)=>subjects.find(s=>s.id===id)?.name ?? 'Subject'
@@ -255,8 +259,27 @@ export default function Discussions() {
       <div className="discussion-wide discussion-actions"><button type="button" className="secondary" onClick={()=>setShowForm(false)}>Cancel</button><button className="primary" disabled={busy}>Start discussion</button></div>
     </form></section>}
 
+    <section className="panel" style={{marginBottom:'16px'}}>
+      <div className="panel-heading"><div><h3>Browse by class and subject</h3><p>Choose a class, then a subject, to find its discussions quickly.</p></div></div>
+      <div style={{display:'flex',gap:'12px',flexWrap:'wrap',alignItems:'end'}}>
+        <label style={{flex:'1 1 190px'}}>Class
+          <select value={filterClassId} onChange={e=>{setFilterClassId(e.target.value);setFilterSubjectId('');setSelectedId(null)}}>
+            <option value="">All classes</option>
+            {classes.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </label>
+        <label style={{flex:'1 1 190px'}}>Subject
+          <select value={filterSubjectId} disabled={!filterClassId} onChange={e=>{setFilterSubjectId(e.target.value);setSelectedId(null)}}>
+            <option value="">All subjects</option>
+            {filterSubjects.map(subject=><option key={subject.id} value={subject.id}>{subject.name} ({discussionCountForSubject(subject.id)})</option>)}
+          </select>
+        </label>
+        {(filterClassId||filterSubjectId)&&<button type="button" className="secondary" onClick={()=>{setFilterClassId('');setFilterSubjectId('');setSelectedId(null)}}>Show all discussions</button>}
+      </div>
+      {filterClassId&&<p className="muted" style={{marginTop:'10px'}}>{className(filterClassId)}{filterSubjectId?' · '+subjectName(filterSubjectId):' · All subjects'} · {visible.length} discussion{visible.length===1?'':'s'}</p>}
+    </section>
     <section className="discussion-layout">
-      <div className="panel discussion-list"><div className="panel-heading"><div><h3>Class discussions</h3><p>{discussions.length} discussion{discussions.length===1?'':'s'} available</p></div></div><div className="discussion-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search discussions"/></div>
+      <div className="panel discussion-list"><div className="panel-heading"><div><h3>Class discussions</h3><p>{visible.length} discussion{visible.length===1?'':'s'} in this view</p></div></div><div className="discussion-search"><Search size={17}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search discussions"/></div>
         {visible.length===0?<div className="empty-state"><MessageCircle size={34}/><strong>No discussions yet</strong><p>{isStaff?'Start the first classroom discussion.':'Your class discussions will appear here.'}</p></div>:<div className="discussion-items">{visible.map(d=><button key={d.id} className={`discussion-item ${selectedId===d.id?'selected':''}`} onClick={()=>setSelectedId(d.id)}><div className="discussion-item-top"><strong>{d.is_pinned&&<Pin size={14}/>} {d.title}</strong><span className={`discussion-status ${d.status}`}>{d.status}</span></div><small>{className(d.class_id)} · {subjectName(d.subject_id)}</small><small>{posts.filter(p=>p.discussion_id===d.id).length} replies · {formatDate(d.created_at)}</small></button>)}</div>}
       </div>
 
