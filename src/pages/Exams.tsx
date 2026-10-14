@@ -2478,6 +2478,13 @@ export default function Exams() {
                           const nextType = event.target.value as QuestionType
                           // Keep existing options, matches and marking keys when changing type.
                           updateQuestionLocal(question.id, { question_type: nextType })
+                          // Persist the selected type immediately; leave all answer data intact.
+                          void supabase.from('exam_questions')
+                            .update({ question_type: nextType })
+                            .eq('id', question.id)
+                            .then(({ error: typeError }) => {
+                              if (typeError) setError('Could not save question type: ' + typeError.message)
+                            })
                         }}
                       >
                         {Object.entries(questionLabels).map(([value, label]) => (
