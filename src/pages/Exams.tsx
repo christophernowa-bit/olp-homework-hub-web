@@ -260,6 +260,8 @@ export default function Exams() {
   const submitGuardRef = useRef(false)
   const studentTextTimersRef = useRef<Record<string, number>>({})
   const studentPendingTextRef = useRef<Record<string, { question: QuestionRow; text: string }>>({})
+  const studentSaveQueueRef = useRef<Record<string, Promise<void>>>({})
+  const studentAnswersRef = useRef<Record<string, any>>({})
   const [sourcePaperUrl, setSourcePaperUrl] = useState('')
   const [sourcePaperMime, setSourcePaperMime] = useState('')
   const [questionDiagramUrls, setQuestionDiagramUrls] = useState<Record<string, string>>({})
@@ -485,14 +487,18 @@ export default function Exams() {
 
   async function saveStudentAnswer(question: QuestionRow, patch: Record<string, any>) {
     if (!studentAttempt || studentAttempt.status !== 'in_progress') return
-    const current = studentAnswers[question.id] ?? {}
-    const next = { ...current, ...patch }
-    setStudentAnswers((answers) => ({ ...answers, [question.id]: next }))
-    try {
-      setStudentSavingQuestionId(question.id)
+    const questionId = question.id
+    // Keep the latest on-screen draft separate from responses returned by autosave.
+    const next = { ...(studentAnswersRef.current[questionId] ?? studentAnswers[questionId] ?? {}), ...patch }
+    studentAnswersRef.current[questionId] = next
+    setStudentAnswers((answers) => ({ ...answers, [questionId]: { ...(answers[questionId] ?? {}), ...patch } }))
+    setStudentSavingQuestionId(questionId)
+    // Serialize saves for each question so an older request cannot overwrite a newer answer.
+    const previous = studentSaveQueueRef.current[questionId] ?? Promise.resolve()
+    const saving = previous.catch(() => {}).then(async () => {
       const payload = {
         attempt_id: studentAttempt.id,
-        question_id: question.id,
+        question_id: questionId,
         answer_text: next.answer_text ?? null,
         answer_json: next.answer_json ?? {},
         selected_option_key: next.selected_option_key ?? null,
@@ -500,17 +506,21 @@ export default function Exams() {
         matching_response: next.matching_response ?? [],
         updated_at: new Date().toISOString(),
       }
-      const { data, error: saveError } = await supabase
+      const { error: saveError } = await supabase
         .from('exam_answers')
         .upsert(payload, { onConflict: 'attempt_id,question_id' })
-        .select('*')
-        .single()
       if (saveError) throw saveError
-      setStudentAnswers((answers) => ({ ...answers, [question.id]: data }))
+    })
+    studentSaveQueueRef.current[questionId] = saving
+    try {
+      await saving
     } catch (err) {
       setError(errorMessage(err, `Could not save question ${question.question_number}.`))
     } finally {
-      setStudentSavingQuestionId(null)
+      if (studentSaveQueueRef.current[questionId] === saving) {
+        delete studentSaveQueueRef.current[questionId]
+        setStudentSavingQuestionId((current) => current === questionId ? null : current)
+      }
     }
   }
 
@@ -519,6 +529,7 @@ export default function Exams() {
       ...current,
       [question.id]: { ...(current[question.id] ?? {}), answer_text: text },
     }))
+    studentAnswersRef.current[question.id] = { ...(studentAnswersRef.current[question.id] ?? {}), answer_text: text }
     studentPendingTextRef.current[question.id] = { question, text }
     const existingTimer = studentTextTimersRef.current[question.id]
     if (existingTimer) window.clearTimeout(existingTimer)
