@@ -54,7 +54,6 @@ type AssignmentRow = {
   updated_at: string
   content_json: unknown
   content_version: number
-  marking_key_text?: string | null
 }
 
 type SubmissionRow = {
@@ -541,7 +540,11 @@ function TeacherAssignments({
       setReviewRoster([])
       setReviewSubmissions([])
       setExpandedSubmissionId(null)
-      setAssignmentMarkingKey(assignment.marking_key_text ?? '')
+      setAssignmentMarkingKey('')
+      const { data: keyRow, error: keyError } = await supabase.from('assignment_ai_keys')
+        .select('marking_key_text').eq('assignment_id', assignment.id).maybeSingle()
+      if (keyError) throw keyError
+      setAssignmentMarkingKey(keyRow?.marking_key_text ?? '')
       setMessage('')
       setError('')
 
@@ -576,11 +579,9 @@ function TeacherAssignments({
     try {
       setMarkingKeySaving(true)
       setError('')
-      const { error: saveError } = await supabase.from('assignments')
-        .update({ marking_key_text: key }).eq('id', reviewAssignmentId)
+      const { error: saveError } = await supabase.from('assignment_ai_keys')
+        .upsert({ assignment_id: reviewAssignmentId, marking_key_text: key, updated_at: new Date().toISOString() }, { onConflict: 'assignment_id' })
       if (saveError) throw saveError
-      setAssignments(current => current.map(item =>
-        item.id === reviewAssignmentId ? { ...item, marking_key_text: key } : item))
       setMessage('Assignment marking key saved privately.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save marking key.')
