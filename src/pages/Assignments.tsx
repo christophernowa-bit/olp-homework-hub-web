@@ -146,6 +146,10 @@ function TeacherAssignments({
   const [reviewSubmissions, setReviewSubmissions] = useState<SubmissionRow[]>([])
   const [reviewLoading, setReviewLoading] = useState(false)
   const [expandedSubmissionId, setExpandedSubmissionId] = useState<string | null>(null)
+  const [assignmentMarkingKey, setAssignmentMarkingKey] = useState('')
+  const [markingKeySaving, setMarkingKeySaving] = useState(false)
+  const [assignmentMarkBusy, setAssignmentMarkBusy] = useState<string | null>(null)
+  const [teacherProposedMarks, setTeacherProposedMarks] = useState<Record<string, string>>({})
 
   const selectedClassSubjects = useMemo(
     () => subjects.filter((subject) => subject.class_id === form.classId),
@@ -536,6 +540,11 @@ function TeacherAssignments({
       setReviewRoster([])
       setReviewSubmissions([])
       setExpandedSubmissionId(null)
+      setAssignmentMarkingKey('')
+      const { data: keyRow, error: keyError } = await supabase.from('assignment_ai_keys')
+        .select('marking_key_text').eq('assignment_id', assignment.id).maybeSingle()
+      if (keyError) throw keyError
+      setAssignmentMarkingKey(keyRow?.marking_key_text ?? '')
       setMessage('')
       setError('')
 
@@ -561,6 +570,69 @@ function TeacherAssignments({
     } finally {
       setReviewLoading(false)
     }
+  }
+
+  async function saveAssignmentMarkingKey() {
+    if (!reviewAssignmentId || !userId) return
+    const key = assignmentMarkingKey.trim()
+    if (!key) { setError('Paste a marking key before saving.'); return }
+    try {
+      setMarkingKeySaving(true)
+      setError('')
+      const { error: saveError } = await supabase.from('assignment_ai_keys')
+        .upsert({ assignment_id: reviewAssignmentId, marking_key_text: key, updated_at: new Date().toISOString() }, { onConflict: 'assignment_id' })
+      if (saveError) throw saveError
+      setMessage('Assignment marking key saved privately.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save marking key.')
+    } finally { setMarkingKeySaving(false) }
+  }
+
+  async function markAssignmentWithAi(submissionId: string) {
+    if (!assignmentMarkingKey.trim()) {
+      setError('Save the assignment marking key before running AI marking.')
+      return
+    }
+    try {
+      setAssignmentMarkBusy(submissionId)
+      setError('')
+      const { data, error: markError } = await supabase.functions.invoke('assignment-ai-mark', {
+        body: { submission_id: submissionId },
+      })
+      if (markError) throw markError
+      if (data?.error) throw new Error(data.error)
+      if (typeof data?.ai_mark !== 'number') throw new Error('AI did not return a valid proposed mark.')
+      setTeacherProposedMarks(current => ({ ...current, [submissionId]: String(data.ai_mark) }))
+      setMessage('AI proposed a mark. Review it and approve before returning to the learner.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI marking failed.')
+    } finally { setAssignmentMarkBusy(null) }
+  }
+
+  async function approveAssignmentMark(submission: SubmissionRow) {
+    const raw = teacherProposedMarks[submission.id]
+    const value = Number(raw)
+    const assignment = assignments.find(item => item.id === submission.assignment_id)
+    if (raw === undefined || !Number.isFinite(value) || value < 0 || value > Number(assignment?.total_marks ?? 0)) {
+      setError('Enter a valid mark within the assignment total.')
+      return
+    }
+    try {
+      setAssignmentMarkBusy(submission.id)
+      setError('')
+      const { error: saveError } = await supabase.from('assignment_submissions').update({
+        mark: value, status: 'returned', feedback: 'Mark reviewed and approved by teacher.',
+        marked_by: userId, marked_at: new Date().toISOString(),
+        returned_at: new Date().toISOString(),
+      }).eq('id', submission.id)
+      if (saveError) throw saveError
+      setReviewSubmissions(current => current.map(item => item.id === submission.id
+        ? { ...item, mark: value, status: 'returned', feedback: 'Mark reviewed and approved by teacher.' }
+        : item))
+      setMessage('Mark approved and returned to the student.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not return the mark.')
+    } finally { setAssignmentMarkBusy(null) }
   }
 
   function closeSubmissionViewer() {
@@ -670,6 +742,21 @@ function TeacherAssignments({
           </div>
         </section>
 
+        <section className="panel assignment-marking-key">
+          <div className="panel-heading"><div>
+            <h3>Marking Key for AI Marking</h3>
+            <p>Paste the full numbered marking scheme. Only teachers can edit the marking key.</p>
+          </div></div>
+          <label htmlFor="assignment-marking-key">Teacher marking key</label>
+          <textarea id="assignment-marking-key" rows={12} value={assignmentMarkingKey}
+            onChange={event => setAssignmentMarkingKey(event.target.value)}
+            placeholder="Question 1 (2 marks): Expected answer..."/>
+          <button className="primary" type="button" disabled={markingKeySaving || !assignmentMarkingKey.trim()}
+            onClick={() => void saveAssignmentMarkingKey()}>
+            {markingKeySaving ? 'Saving…' : 'Save marking key'}
+          </button>
+        </section>
+
         <section className="panel assignment-submissions-panel">
           <div className="panel-heading">
             <div>
@@ -744,6 +831,26 @@ function TeacherAssignments({
                       )}
                     </div>
 
+                    {submission && (
+                      <div className="assignment-ai-marking-actions">
+                        {submission.status !== 'returned' && (
+                          <button type="button" disabled={assignmentMarkBusy === submission.id || !assignmentMarkingKey.trim()}
+                            onClick={() => void markAssignmentWithAi(submission.id)}>
+                            {assignmentMarkBusy === submission.id ? 'AI marking…' : 'AI Mark'}
+                          </button>
+                        )}
+                        {teacherProposedMarks[submission.id] !== undefined && submission.status !== 'returned' && (
+                          <label>Teacher-reviewed mark
+                            <input type="number" min="0" max={reviewAssignment.total_marks} step="0.5"
+                              value={teacherProposedMarks[submission.id]}
+                              onChange={event => setTeacherProposedMarks(current => ({...current, [submission.id]: event.target.value}))}/>
+                            <button type="button" disabled={assignmentMarkBusy === submission.id}
+                              onClick={() => void approveAssignmentMark(submission)}>Approve & Return</button>
+                          </label>
+                        )}
+                        {submission.status === 'returned' && <strong>Returned: {submission.mark}/{reviewAssignment.total_marks}</strong>}
+                      </div>
+                    )}
                     {submission && isExpanded && (
                       <div className="assignment-response-preview">
                         <div className="panel-heading">
