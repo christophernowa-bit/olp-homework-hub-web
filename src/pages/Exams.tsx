@@ -2028,7 +2028,8 @@ export default function Exams() {
                     question.question_type === 'structured') &&
                     !questions.some((child) => child.parent_question_id === question.id) && (
                     <textarea
-                      rows={question.question_type === 'short_answer' ? 3 : 7}
+                      rows={question.question_type === 'short_answer' ? 9 : 16}
+                      style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: question.question_type === 'short_answer' ? 240 : 360, fontSize: 16, lineHeight: 1.6, padding: 14, resize: 'vertical' }}
                       value={answer.answer_text ?? ''}
                       placeholder="Type your answer here"
                       readOnly={studentReadOnly}
@@ -2830,7 +2831,7 @@ export default function Exams() {
           <div className="exam-marking-key-paste" style={{ marginBottom: 20 }}>
             <label htmlFor="exam-pasted-marking-key"><strong>Paste complete marking key</strong></label>
             <p className="muted">Paste numbered model answers, acceptable alternatives and marks. This will replace the existing key for this exam.</p>
-            <textarea id="exam-pasted-marking-key" rows={12} style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 240, marginTop: 10, marginBottom: 12, resize: 'vertical' }} value={pastedMarkingKey}
+            <textarea id="exam-pasted-marking-key" rows={18} style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 380, fontSize: 16, lineHeight: 1.6, padding: 14, marginTop: 10, marginBottom: 12, resize: 'vertical' }} value={pastedMarkingKey}
               onChange={(event) => setPastedMarkingKey(event.target.value)}
               placeholder={'Question 1 (2 marks)\\nExpected answer: ...\\n\\nQuestion 2 (3 marks)\\nMarking points: ...'}
               disabled={markingKeyBusy} />

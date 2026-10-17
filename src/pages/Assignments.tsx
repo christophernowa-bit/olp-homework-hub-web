@@ -748,7 +748,9 @@ function TeacherAssignments({
             <p>Paste the full numbered marking scheme. Only teachers can edit the marking key.</p>
           </div></div>
           <label htmlFor="assignment-marking-key">Teacher marking key</label>
-          <textarea id="assignment-marking-key" rows={12} value={assignmentMarkingKey}
+          <textarea id="assignment-marking-key" rows={18}
+            style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 380, fontSize: 16, lineHeight: 1.6, padding: 14, marginTop: 10, marginBottom: 12, resize: 'vertical' }}
+            value={assignmentMarkingKey}
             onChange={event => setAssignmentMarkingKey(event.target.value)}
             placeholder="Question 1 (2 marks): Expected answer..."/>
           <button className="primary" type="button" disabled={markingKeySaving || !assignmentMarkingKey.trim()}
