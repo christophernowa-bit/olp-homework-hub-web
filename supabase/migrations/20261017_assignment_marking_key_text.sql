@@ -7,12 +7,12 @@ CREATE TABLE IF NOT EXISTS public.assignment_ai_keys (
 ALTER TABLE public.assignment_ai_keys ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Assignment key teacher read" ON public.assignment_ai_keys FOR SELECT TO authenticated
 USING (EXISTS (SELECT 1 FROM public.assignments a WHERE a.id = assignment_id
-  AND (a.created_by = (SELECT auth.uid()) OR public.is_platform_owner((SELECT auth.uid())))));
+  AND (a.created_by = (SELECT auth.uid()))));
 CREATE POLICY "Assignment key teacher insert" ON public.assignment_ai_keys FOR INSERT TO authenticated
 WITH CHECK (EXISTS (SELECT 1 FROM public.assignments a WHERE a.id = assignment_id
-  AND (a.created_by = (SELECT auth.uid()) OR public.is_platform_owner((SELECT auth.uid())))));
+  AND (a.created_by = (SELECT auth.uid()))));
 CREATE POLICY "Assignment key teacher update" ON public.assignment_ai_keys FOR UPDATE TO authenticated
 USING (EXISTS (SELECT 1 FROM public.assignments a WHERE a.id = assignment_id
-  AND (a.created_by = (SELECT auth.uid()) OR public.is_platform_owner((SELECT auth.uid())))))
+  AND (a.created_by = (SELECT auth.uid()))))
 WITH CHECK (EXISTS (SELECT 1 FROM public.assignments a WHERE a.id = assignment_id
-  AND (a.created_by = (SELECT auth.uid()) OR public.is_platform_owner((SELECT auth.uid())))));
+  AND (a.created_by = (SELECT auth.uid()))));
