@@ -267,6 +267,7 @@ export default function Exams() {
   const [questionDiagramUrls, setQuestionDiagramUrls] = useState<Record<string, string>>({})
   const [diagramBusyId, setDiagramBusyId] = useState<string | null>(null)
   const [markingKeyFile, setMarkingKeyFile] = useState<File | null>(null)
+  const [pastedMarkingKey, setPastedMarkingKey] = useState('')
   const [markingKeyBusy, setMarkingKeyBusy] = useState(false)
   const [teacherAttempts, setTeacherAttempts] = useState<ExamAttemptRow[]>([])
   const [teacherStudentNames, setTeacherStudentNames] = useState<Record<string, string>>({})
@@ -1551,23 +1552,27 @@ export default function Exams() {
     }
   }
 
-  async function uploadWholePaperMarkingKey() {
-    if (!reviewExam || !markingKeyFile) return
+  async function uploadWholePaperMarkingKey(pastedText?: string) {
+    if (!reviewExam) return
+    const fileToSave = pastedText !== undefined
+      ? new File([pastedText.trim()], 'pasted-marking-key.txt', { type: 'text/plain' })
+      : markingKeyFile
+    if (!fileToSave || (pastedText !== undefined && !pastedText.trim())) return
     try {
       setMarkingKeyBusy(true)
       setError('')
       setMessage('')
-      const safeName = markingKeyFile.name.replace(/[^a-zA-Z0-9._-]+/g, '-')
+      const safeName = fileToSave.name.replace(/[^a-zA-Z0-9._-]+/g, '-')
       const storagePath = `${reviewExam.id}/${crypto.randomUUID()}-${safeName}`
-      const { error: uploadError } = await supabase.storage.from('exam-marking-keys').upload(storagePath, markingKeyFile, {
-        contentType: markingKeyFile.type || undefined, upsert: false,
+      const { error: uploadError } = await supabase.storage.from('exam-marking-keys').upload(storagePath, fileToSave, {
+        contentType: fileToSave.type || undefined, upsert: false,
       })
       if (uploadError) throw uploadError
       const oldPath = String((reviewExam as any).marking_key_path ?? '')
       const { data: updated, error: updateError } = await supabase.from('exams').update({
         marking_key_path: storagePath,
-        marking_key_name: markingKeyFile.name,
-        marking_key_mime_type: markingKeyFile.type || null,
+        marking_key_name: fileToSave.name,
+        marking_key_mime_type: fileToSave.type || null,
       }).eq('id', reviewExam.id).select('*').single()
       if (updateError) {
         await supabase.storage.from('exam-marking-keys').remove([storagePath])
@@ -1577,6 +1582,7 @@ export default function Exams() {
       setReviewExam(updated as ExamRow)
       setExams((current) => current.map((exam) => exam.id === updated.id ? (updated as ExamRow) : exam))
       setMarkingKeyFile(null)
+      if (pastedText !== undefined) setPastedMarkingKey('')
       setMessage('Whole-paper marking key attached successfully.')
     } catch (err) {
       setError(errorMessage(err, 'Could not attach the marking key.'))
@@ -2819,6 +2825,20 @@ export default function Exams() {
               <h3>Marking Key for AI Marking</h3>
               <p>Attach one complete marking key after building the paper. It stays private to teachers/platform owners and will be the authority for AI-assisted marking.</p>
             </div>
+          </div>
+
+          <div className="exam-marking-key-paste" style={{ marginBottom: 20 }}>
+            <label htmlFor="exam-pasted-marking-key"><strong>Paste complete marking key</strong></label>
+            <p className="muted">Paste numbered model answers, acceptable alternatives and marks. This will replace the existing key for this exam.</p>
+            <textarea id="exam-pasted-marking-key" rows={12} value={pastedMarkingKey}
+              onChange={(event) => setPastedMarkingKey(event.target.value)}
+              placeholder={'Question 1 (2 marks)\\nExpected answer: ...\\n\\nQuestion 2 (3 marks)\\nMarking points: ...'}
+              disabled={markingKeyBusy} />
+            <button className="primary" type="button"
+              disabled={markingKeyBusy || !pastedMarkingKey.trim()}
+              onClick={() => void uploadWholePaperMarkingKey(pastedMarkingKey)}>
+              {markingKeyBusy ? 'Saving…' : 'Save pasted marking key'}
+            </button>
           </div>
 
           {(reviewExam as any).marking_key_path ? (
