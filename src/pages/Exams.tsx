@@ -269,6 +269,7 @@ export default function Exams() {
   const [markingKeyFile, setMarkingKeyFile] = useState<File | null>(null)
   const [markingKeyBusy, setMarkingKeyBusy] = useState(false)
   const [teacherAttempts, setTeacherAttempts] = useState<ExamAttemptRow[]>([])
+  const [teacherStudentNames, setTeacherStudentNames] = useState<Record<string, string>>({})
   const [teacherMarkingAttempt, setTeacherMarkingAttempt] = useState<ExamAttemptRow | null>(null)
   const [teacherMarkAnswers, setTeacherMarkAnswers] = useState<TeacherAnswer[]>([])
   const [teacherMarkResults, setTeacherMarkResults] = useState<TeacherMarkResult[]>([])
@@ -965,6 +966,32 @@ export default function Exams() {
         .order('submitted_at', { ascending: false })
       if (attemptRowsError) throw attemptRowsError
       setTeacherAttempts((attemptRows ?? []) as ExamAttemptRow[])
+      // Use the same authenticated class roster endpoint as Assignments.
+      // A failed roster lookup must never hide exam submissions.
+      setTeacherStudentNames({})
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session) {
+          const params = new URLSearchParams({ class_id: loadedExam.class_id })
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/class-students?${params.toString()}`,
+            { headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+            } },
+          )
+          if (response.ok) {
+            const roster = await response.json()
+            setTeacherStudentNames(Object.fromEntries(
+              (roster.students ?? []).map((student: { student_id: string; full_name?: string; email?: string }) =>
+                [student.student_id, student.full_name?.trim() || student.email || 'Unnamed student'],
+              ),
+            ))
+          }
+        }
+      } catch (rosterError) {
+        console.warn('Student names unavailable; exam submissions remain accessible.', rosterError)
+      }
       setTeacherMarkingAttempt(null)
       setTeacherMarkAnswers([])
       setTeacherMarkResults([])
@@ -2311,7 +2338,7 @@ export default function Exams() {
             <div className="exam-marking-attempts">
               {teacherAttempts.filter((attempt) => attempt.status !== 'in_progress').map((attempt) => (
                 <div className="exam-marking-attempt" key={attempt.id}>
-                  <div><strong>Student submission</strong><p className="muted">{attempt.student_id.slice(0, 8)}… · {attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleString() : 'Submitted'}</p></div>
+                  <div><strong>{teacherStudentNames[attempt.student_id] || 'Student name unavailable'}</strong><p className="muted">{attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleString() : 'Submitted'} · {attempt.student_id.slice(0, 8)}…</p></div>
                   <span className={`assignment-status ${attempt.status}`}>{attempt.status}</span>
                   {attempt.ai_mark != null && <strong>{attempt.ai_mark} AI marks</strong>}
                   {attempt.final_mark != null && <strong>{attempt.final_mark} final marks</strong>}
