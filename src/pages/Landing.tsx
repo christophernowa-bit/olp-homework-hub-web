@@ -175,6 +175,11 @@ export default function Landing() {
         </div>
       </section>
 
+      <section className="landing-section" aria-labelledby="olp-platforms-title">
+        <div className="landing-section-heading"><p className="landing-kicker-text">CONNECTED OLP PLATFORMS</p><h2 id="olp-platforms-title">Assignments, live lessons and Maths explanations.</h2><p>Open your other OLP learning spaces. Use your existing OLP account and sign in separately on each platform.</p></div>
+        <div className="landing-hero-actions"><a className="landing-button landing-button-secondary" href="https://olp-classroom.pages.dev/" target="_blank" rel="noopener noreferrer">Virtual Classroom <ArrowRight size={18} /></a><a className="landing-button landing-button-secondary" href="https://olp-maths-studio.christophernowa.chatgpt.site/studio" target="_blank" rel="noopener noreferrer">Maths Studio <ArrowRight size={18} /></a></div>
+      </section>
+
       <section className="landing-cta">
         <div>
           <p className="landing-kicker-text">OLP HOMEWORK HUB</p>

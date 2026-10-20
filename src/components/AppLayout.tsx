@@ -3,6 +3,8 @@ import {
   BookOpen,
   ClipboardList,
   FileText,
+  Video,
+  Calculator,
   LayoutDashboard,
   LogOut,
   MessageCircle,
@@ -142,6 +144,8 @@ export default function AppLayout() {
               Platform Owner
             </NavLink>
           )}
+          <a className="nav-item" href="https://olp-classroom.pages.dev/" target="_blank" rel="noopener noreferrer"><Video size={18} />Virtual Classroom ↗</a>
+          <a className="nav-item" href="https://olp-maths-studio.christophernowa.chatgpt.site/studio" target="_blank" rel="noopener noreferrer"><Calculator size={18} />Maths Studio ↗</a>
         </nav>
 
         <div className="sidebar-account">
