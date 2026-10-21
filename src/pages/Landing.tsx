@@ -66,6 +66,7 @@ export default function Landing() {
           <a href="#features">Features</a>
           <a href="#teachers-students">Who it helps</a>
           <a href="#how-it-works">How it works</a>
+          <a href="#faq">FAQ</a>
         </nav>
         <div className="landing-nav-actions">
           <Link className="landing-button landing-button-ghost" to="/login">Sign in</Link>
@@ -178,6 +179,18 @@ export default function Landing() {
       <section className="landing-section" aria-labelledby="olp-platforms-title">
         <div className="landing-section-heading"><p className="landing-kicker-text">CONNECTED OLP PLATFORMS</p><h2 id="olp-platforms-title">Assignments, live lessons and Maths explanations.</h2><p>Open your other OLP learning spaces. Use your existing OLP account and sign in separately on each platform.</p></div>
         <div className="landing-hero-actions"><a className="landing-button landing-button-secondary" href="https://olp-classroom.pages.dev/" target="_blank" rel="noopener noreferrer">Virtual Classroom <ArrowRight size={18} /></a><a className="landing-button landing-button-secondary" href="https://olp-maths-studio.christophernowa.chatgpt.site/studio" target="_blank" rel="noopener noreferrer">Maths Studio <ArrowRight size={18} /></a></div>
+      </section>
+
+      <section className="landing-section" id="faq" aria-labelledby="olp-faq-heading">
+        <div className="landing-section-heading">
+          <p className="landing-kicker-text">FREQUENTLY ASKED QUESTIONS</p>
+          <h2 id="olp-faq-heading">About OLP Homework Hub</h2>
+        </div>
+        <div className="landing-steps">
+          <article><h3>What is OLP Homework Hub?</h3><p>An online learning workspace for teachers and students to organise classes, assignments, exams, resources and discussions.</p></article>
+          <article><h3>Can I use OLP on my phone?</h3><p>Yes. OLP Homework Hub is designed for mobile and desktop browsers, so students can access and complete their work on a phone.</p></article>
+          <article><h3>Does AI marking replace the teacher?</h3><p>No. AI-assisted marking helps teachers review work against marking keys. Teachers check proposed marks before returning results.</p></article>
+        </div>
       </section>
 
       <section className="landing-cta">
