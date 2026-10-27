@@ -1,6 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Dashboard from './pages/Dashboard'
-import Exams from './pages/Exams'
 import Classes from './pages/Classes'
 import Assignments from './pages/Assignments'
 import Settings from './pages/Settings'
@@ -23,7 +22,6 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/exams" element={<Exams />} />
           <Route path="/classes" element={<Classes />} />
           <Route path="/assignments" element={<Assignments />} />
           <Route path="/discussions" element={<Discussions />} />
@@ -41,3 +39,4 @@ export default function App() {
     </Routes>
   )
 }
+
