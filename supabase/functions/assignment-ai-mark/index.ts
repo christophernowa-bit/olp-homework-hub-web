@@ -42,43 +42,76 @@ Deno.serve(async (req: Request) => {
       'Teacher marking key: ' + keyRow.marking_key_text,
       'Student response: ' + JSON.stringify({ text: submission.text_response, document: submission.response_json }),
     ].join('\n\n')
-    const model = 'gemini-3.8-flash'
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({
-        model,
-        input: prompt,
-        generation_config: { temperature: 0, thinking_level: 'low', max_output_tokens: 4096 },
-        response_format: {
-          type: 'text',
-          mime_type: 'application/json',
-          schema: {
-            type: 'object',
-            properties: {
-              mark: { type: 'number' },
-              feedback: { type: 'string' },
-              needs_teacher_review: { type: 'boolean' },
-            },
-            required: ['mark', 'feedback', 'needs_teacher_review'],
-          },
-        },
-      }),
-    })
-    const responseText = await response.text()
+    const models = ['gemini-3.8-flash', 'gemini-3.6-flash']
+    let model = models[0]
+    let response: Response | null = null
+    let responseText = ''
     let payload: any = {}
-    try { payload = JSON.parse(responseText) } catch { /* Keep the upstream response body out of logs when it is not JSON. */ }
-    if (!response.ok) {
+    let providerFailure: { status: number; code: string | null; message: string } | null = null
+
+    for (const candidateModel of models) {
+      model = candidateModel
+      response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          model,
+          input: prompt,
+          generation_config: { temperature: 0, thinking_level: 'low', max_output_tokens: 4096 },
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+            schema: {
+              type: 'object',
+              properties: {
+                mark: { type: 'number' },
+                feedback: { type: 'string' },
+                needs_teacher_review: { type: 'boolean' },
+              },
+              required: ['mark', 'feedback', 'needs_teacher_review'],
+            },
+          },
+        }),
+      })
+      responseText = await response.text()
+      payload = {}
+      try { payload = JSON.parse(responseText) } catch { /* Keep the upstream response body out of logs when it is not JSON. */ }
+
+      if (response.ok) {
+        providerFailure = null
+        break
+      }
+
       const providerMessage = typeof payload?.error?.message === 'string'
         ? payload.error.message.replaceAll(apiKey, '[redacted]').slice(0, 280)
         : `HTTP ${response.status}`
-      console.error('Gemini generateContent failed', {
+      providerFailure = {
         status: response.status,
         code: payload?.error?.status || payload?.error?.code || null,
         message: providerMessage,
+      }
+
+      const capacityLimited = response.status === 429 || response.status === 503
+      if (capacityLimited && candidateModel !== models[models.length - 1]) {
+        console.warn('Gemini model busy; trying fallback model', {
+          model,
+          status: response.status,
+          fallback: models[models.indexOf(candidateModel) + 1],
+        })
+        continue
+      }
+      break
+    }
+
+    if (!response?.ok) {
+      console.error('Gemini Interactions API failed', {
+        model,
+        status: providerFailure?.status ?? response?.status ?? 502,
+        code: providerFailure?.code ?? null,
+        message: providerFailure?.message ?? 'Unknown provider error',
       })
       return reply({
-        error: `AI marking provider error (${response.status}): ${providerMessage}. Check the Gemini API key and model access, then try again.`,
+        error: `AI marking provider error (${providerFailure?.status ?? response?.status ?? 502}): ${providerFailure?.message ?? 'Unknown provider error'}. Try again later or check the Gemini API key and model access.`,
       }, 502)
     }
     const output = Array.isArray(payload?.steps)
