@@ -24,7 +24,8 @@ Deno.serve(async (req: Request) => {
     const { data: assignment } = await admin.from('assignments')
       .select('id,title,created_by,total_marks,content_json,instructions').eq('id', submission.assignment_id).single()
     if (!assignment) return reply({ error: 'Assignment not found' }, 404)
-    const { data: owner } = await admin.rpc('is_platform_owner', { p_user_id: auth.user.id })
+    const { data: owner, error: ownerError } = await userClient.rpc('is_platform_owner')
+    if (ownerError) console.error('assignment-ai-mark owner lookup failed', ownerError.message)
     if (assignment.created_by !== auth.user.id && owner !== true) return reply({ error: 'Only the assignment teacher or owner can mark' }, 403)
     const { data: keyRow } = await admin.from('assignment_ai_keys').select('marking_key_text').eq('assignment_id', assignment.id).single()
     if (!keyRow?.marking_key_text?.trim()) return reply({ error: 'Save the marking key before AI marking' }, 409)
@@ -41,14 +42,93 @@ Deno.serve(async (req: Request) => {
       'Teacher marking key: ' + keyRow.marking_key_text,
       'Student response: ' + JSON.stringify({ text: submission.text_response, document: submission.response_json }),
     ].join('\n\n')
-    const model = 'gemini-2.5-flash'
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }),
-    })
-    if (!response.ok) return reply({ error: 'AI service temporarily unavailable; no marks were returned' }, 502)
-    const payload = await response.json()
-    const output = payload?.candidates?.[0]?.content?.parts?.map((p: {text?:string}) => p.text || '').join('') || ''
+    const models = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']
+    let model = models[0]
+    let response: Response | null = null
+    let responseText = ''
+    let payload: any = {}
+    let providerFailure: { status: number; code: string | null; message: string } | null = null
+
+    for (const candidateModel of models) {
+      model = candidateModel
+      response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify({
+          model,
+          input: prompt,
+          generation_config: { temperature: 0, thinking_level: 'low', max_output_tokens: 4096 },
+          response_format: {
+            type: 'text',
+            mime_type: 'application/json',
+            schema: {
+              type: 'object',
+              properties: {
+                mark: { type: 'number' },
+                feedback: { type: 'string' },
+                needs_teacher_review: { type: 'boolean' },
+              },
+              required: ['mark', 'feedback', 'needs_teacher_review'],
+            },
+          },
+        }),
+      })
+      responseText = await response.text()
+      payload = {}
+      try { payload = JSON.parse(responseText) } catch { /* Keep the upstream response body out of logs when it is not JSON. */ }
+
+      if (response.ok) {
+        providerFailure = null
+        break
+      }
+
+      const providerMessage = typeof payload?.error?.message === 'string'
+        ? payload.error.message.replaceAll(apiKey, '[redacted]').slice(0, 280)
+        : `HTTP ${response.status}`
+      providerFailure = {
+        status: response.status,
+        code: payload?.error?.status || payload?.error?.code || null,
+        message: providerMessage,
+      }
+
+      const capacityLimited = response.status === 429 || response.status === 503
+      if (capacityLimited && candidateModel !== models[models.length - 1]) {
+        console.warn('Gemini model busy; trying fallback model', {
+          model,
+          status: response.status,
+          fallback: models[models.indexOf(candidateModel) + 1],
+        })
+        continue
+      }
+      break
+    }
+
+    if (!response?.ok) {
+      console.error('Gemini Interactions API failed', {
+        model,
+        status: providerFailure?.status ?? response?.status ?? 502,
+        code: providerFailure?.code ?? null,
+        message: providerFailure?.message ?? 'Unknown provider error',
+      })
+      return reply({
+        error: `AI marking provider error (${providerFailure?.status ?? response?.status ?? 502}): ${providerFailure?.message ?? 'Unknown provider error'}. Try again later or check the Gemini API key and model access.`,
+      }, 502)
+    }
+    const output = Array.isArray(payload?.steps)
+      ? payload.steps
+          .filter((step: { type?: string }) => step.type === 'model_output')
+          .flatMap((step: { content?: Array<{ type?: string; text?: string }> }) => step.content ?? [])
+          .filter((part: { type?: string }) => part.type === 'text')
+          .map((part: { text?: string }) => part.text || '')
+          .join('')
+      : Array.isArray(payload?.outputs)
+        ? payload.outputs.filter((item: { type?: string }) => item.type === 'text').map((item: { text?: string }) => item.text || '').join('')
+        : ''
+    if (!output) {
+      const reason = payload?.promptFeedback?.blockReason || payload?.candidates?.[0]?.finishReason
+      console.error('Gemini returned no marking content', { reason: reason || 'unknown' })
+      return reply({ error: `AI returned no marking content${reason ? ` (${reason})` : ''}; no marks were saved` }, 502)
+    }
     let result: { mark?: unknown; feedback?: unknown; needs_teacher_review?: unknown }
     try { result = JSON.parse(output) } catch { return reply({ error: 'AI returned invalid data; no marks were saved' }, 502) }
     const mark = Number(result.mark)

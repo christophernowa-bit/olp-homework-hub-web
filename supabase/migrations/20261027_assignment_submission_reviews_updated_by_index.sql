@@ -1,0 +1,1 @@
+create index if not exists assignment_submission_reviews_updated_by_idx on public.assignment_submission_reviews(updated_by);
