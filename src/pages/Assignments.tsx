@@ -762,7 +762,16 @@ function TeacherAssignments({
       if (data?.error) throw new Error(data.error)
       if (typeof data?.ai_mark !== 'number') throw new Error('AI did not return a valid proposed mark.')
       setTeacherProposedMarks(current => ({ ...current, [submissionId]: String(data.ai_mark) }))
-      setMessage('AI proposed a mark. Review it and approve before returning to the learner.')
+      if (typeof data.feedback === 'string' && data.feedback.trim()) {
+        const currentReview = reviewForSubmission(submissionId)
+        if (!currentReview.teacher_feedback.trim()) {
+          setSubmissionReviews((current) => ({
+            ...current,
+            [submissionId]: { ...currentReview, teacher_feedback: data.feedback.trim() },
+          }))
+        }
+      }
+      setMessage('AI proposed a mark and draft feedback. Review both, then save and approve before returning to the learner.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'AI marking failed.')
     } finally { setAssignmentMarkBusy(null) }
