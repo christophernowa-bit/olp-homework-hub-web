@@ -42,10 +42,28 @@ Deno.serve(async (req: Request) => {
       'Teacher marking key: ' + keyRow.marking_key_text,
       'Student response: ' + JSON.stringify({ text: submission.text_response, document: submission.response_json }),
     ].join('\n\n')
-    const model = 'gemini-2.5-flash'
-    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }),
+    const model = 'gemini-3.8-flash'
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        model,
+        input: prompt,
+        generation_config: { temperature: 0, thinking_level: 'low', max_output_tokens: 4096 },
+        response_format: {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: {
+            type: 'object',
+            properties: {
+              mark: { type: 'number' },
+              feedback: { type: 'string' },
+              needs_teacher_review: { type: 'boolean' },
+            },
+            required: ['mark', 'feedback', 'needs_teacher_review'],
+          },
+        },
+      }),
     })
     const responseText = await response.text()
     let payload: any = {}
@@ -63,7 +81,16 @@ Deno.serve(async (req: Request) => {
         error: `AI marking provider error (${response.status}): ${providerMessage}. Check the Gemini API key and model access, then try again.`,
       }, 502)
     }
-    const output = payload?.candidates?.[0]?.content?.parts?.map((p: {text?:string}) => p.text || '').join('') || ''
+    const output = Array.isArray(payload?.steps)
+      ? payload.steps
+          .filter((step: { type?: string }) => step.type === 'model_output')
+          .flatMap((step: { content?: Array<{ type?: string; text?: string }> }) => step.content ?? [])
+          .filter((part: { type?: string }) => part.type === 'text')
+          .map((part: { text?: string }) => part.text || '')
+          .join('')
+      : Array.isArray(payload?.outputs)
+        ? payload.outputs.filter((item: { type?: string }) => item.type === 'text').map((item: { text?: string }) => item.text || '').join('')
+        : ''
     if (!output) {
       const reason = payload?.promptFeedback?.blockReason || payload?.candidates?.[0]?.finishReason
       console.error('Gemini returned no marking content', { reason: reason || 'unknown' })
