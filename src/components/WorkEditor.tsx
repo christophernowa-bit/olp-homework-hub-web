@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   BarChart3,
   Hash,
@@ -988,7 +988,7 @@ function renderTeacherAnnotatedText(
 
   if (!matches.length) return text
 
-  const nodes = []
+  const nodes: ReactNode[] = []
   let cursor = 0
   matches.forEach((item) => {
     if (item.start_offset < cursor) return
