@@ -1287,10 +1287,10 @@ export default function WorkEditor({
             .map((block) => {
               if (block.type === 'answer') {
                 return (
-                  <div className="work-editor-block answer" data-work-block-id={block.id} key={block.id}>
+                  <div className="work-editor-block answer" key={block.id}>
                     <div className="work-editor-block-label">Student answer</div>
                     <div className="work-editor-read-value">
-                      <span style={{ whiteSpace: 'pre-wrap' }}>{renderTeacherAnnotatedText(block.text, annotations, block.id)}</span>
+                      <span data-work-block-id={block.id} style={{ whiteSpace: 'pre-wrap' }}>{renderTeacherAnnotatedText(block.text, annotations, block.id)}</span>
                     </div>
                   </div>
                 )
@@ -1407,7 +1407,7 @@ export default function WorkEditor({
                 (readOnly || previewMathId === block.id)
 
               return (
-                <div className={`work-editor-block ${block.type}`} data-work-block-id={block.id} key={block.id}>
+                <div className={`work-editor-block ${block.type}`} key={block.id}>
                   <div className="work-editor-block-label">
                     {block.type === 'paragraph' && 'Text'}
                     {block.type === 'question' &&
@@ -1443,7 +1443,7 @@ export default function WorkEditor({
                       {block.type === 'question' && (
                         <strong>{questionNumbers.get(block.id)}.</strong>
                       )}
-                      <span>
+                      <span data-work-block-id={block.id}>
                         {block.type === 'math' ? (
                           <FormattedMath text={block.text || '—'} />
                         ) : (
