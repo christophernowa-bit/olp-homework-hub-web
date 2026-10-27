@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import {
   BookOpen,
   ClipboardList,
-  FileText,
   Video,
   Calculator,
   LayoutDashboard,
@@ -73,15 +72,6 @@ export default function AppLayout() {
             Dashboard
           </NavLink>
 
-          <NavLink
-            to="/exams"
-            className={({ isActive }) =>
-              `nav-item${isActive ? ' active' : ''}`
-            }
-          >
-            <FileText size={18} />
-            Exams
-          </NavLink>
 
           <NavLink
             to="/classes"
@@ -171,3 +161,4 @@ export default function AppLayout() {
     </div>
   )
 }
+
