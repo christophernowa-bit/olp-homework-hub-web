@@ -340,11 +340,23 @@ export function buildQuestionResponseDocument(
   }
 }
 
+export type TeacherAnnotation = {
+  id: string
+  block_id: string
+  start_offset: number
+  end_offset: number
+  quote: string
+  kind: 'highlight' | 'correction' | 'comment'
+  comment: string
+  correction?: string
+}
+
 type Props = {
   value: WorkDocument
   onChange: (document: WorkDocument) => void
   readOnly?: boolean
   placeholder?: string
+  annotations?: TeacherAnnotation[]
 }
 
 const mathSymbols = [
@@ -965,11 +977,45 @@ function GraphEditor({
   )
 }
 
+function renderTeacherAnnotatedText(
+  text: string,
+  annotations: TeacherAnnotation[],
+  blockId: string,
+) {
+  const matches = annotations
+    .filter((item) => item.block_id === blockId && item.start_offset >= 0 && item.end_offset <= text.length && item.end_offset > item.start_offset)
+    .sort((left, right) => left.start_offset - right.start_offset)
+
+  if (!matches.length) return text
+
+  const nodes = []
+  let cursor = 0
+  matches.forEach((item) => {
+    if (item.start_offset < cursor) return
+    if (item.start_offset > cursor) nodes.push(text.slice(cursor, item.start_offset))
+    nodes.push(
+      <mark
+        key={item.id}
+        title={item.kind === 'correction' && item.correction ? `Suggested correction: ${item.correction}` : item.comment}
+        style={item.kind === 'correction'
+          ? { background: '#fff1f0', textDecoration: 'underline wavy #d92d20', textUnderlineOffset: 3 }
+          : { background: '#fff0a6', borderRadius: 2 }}
+      >
+        {text.slice(item.start_offset, item.end_offset)}
+      </mark>,
+    )
+    cursor = item.end_offset
+  })
+  if (cursor < text.length) nodes.push(text.slice(cursor))
+  return nodes
+}
+
 export default function WorkEditor({
   value,
   onChange,
   readOnly = false,
   placeholder = 'Start typing...',
+  annotations = [],
 }: Props) {
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
   const [previewMathId, setPreviewMathId] = useState<string | null>(null)
@@ -1231,19 +1277,20 @@ export default function WorkEditor({
           {value.blocks
             .filter(
               (block) =>
-                readOnly ||
-                (block.type !== 'answer' &&
-                  block.type !== 'answerTable' &&
-                  block.type !== 'answerImage' &&
-                  block.type !== 'answerGraph'),
+                (readOnly
+                  ? block.type !== 'answer' || Boolean(block.text.trim())
+                  : block.type !== 'answer' &&
+                    block.type !== 'answerTable' &&
+                    block.type !== 'answerImage' &&
+                    block.type !== 'answerGraph'),
             )
             .map((block) => {
               if (block.type === 'answer') {
                 return (
-                  <div className="work-editor-block answer" key={block.id}>
+                  <div className="work-editor-block answer" data-work-block-id={block.id} key={block.id}>
                     <div className="work-editor-block-label">Student answer</div>
                     <div className="work-editor-read-value">
-                      <span style={{ whiteSpace: 'pre-wrap' }}>{block.text || 'No answer entered.'}</span>
+                      <span style={{ whiteSpace: 'pre-wrap' }}>{renderTeacherAnnotatedText(block.text, annotations, block.id)}</span>
                     </div>
                   </div>
                 )
@@ -1360,7 +1407,7 @@ export default function WorkEditor({
                 (readOnly || previewMathId === block.id)
 
               return (
-                <div className={`work-editor-block ${block.type}`} key={block.id}>
+                <div className={`work-editor-block ${block.type}`} data-work-block-id={block.id} key={block.id}>
                   <div className="work-editor-block-label">
                     {block.type === 'paragraph' && 'Text'}
                     {block.type === 'question' &&
@@ -1400,7 +1447,7 @@ export default function WorkEditor({
                         {block.type === 'math' ? (
                           <FormattedMath text={block.text || '—'} />
                         ) : (
-                          block.text || '—'
+                          block.text ? renderTeacherAnnotatedText(block.text, annotations, block.id) : '—'
                         )}
                       </span>
                     </div>
