@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import {
   ArrowRight,
-  BookOpen,
   CheckCircle2,
   ClipboardCheck,
   GraduationCap,
@@ -19,7 +18,6 @@ type SessionState = 'checking' | 'guest' | 'signed-in'
 const features = [
   { icon: School, title: 'Classes', text: 'Keep classes, subjects and learning spaces organised.' },
   { icon: ClipboardCheck, title: 'Assignments', text: 'Create, share and complete classwork from one workspace.' },
-  { icon: BookOpen, title: 'Exams', text: 'Prepare and complete structured assessments online.' },
   { icon: LibraryBig, title: 'Resource Centre', text: 'Keep useful learning materials easy to find and revisit.' },
   { icon: MessageCircle, title: 'Discussions', text: 'Continue focused classroom conversations beyond the lesson.' },
 ]
@@ -99,7 +97,6 @@ export default function Landing() {
             <div className="landing-mini-sidebar">
               <span className="active"><School size={17} /> Classes</span>
               <span><ClipboardCheck size={17} /> Assignments</span>
-              <span><BookOpen size={17} /> Exams</span>
               <span><LibraryBig size={17} /> Resources</span>
               <span><MessageCircle size={17} /> Discussions</span>
             </div>
@@ -172,7 +169,7 @@ export default function Landing() {
         <div className="landing-steps">
           <article><span>01</span><h3>Create your account</h3><p>Join OLP as a teacher or student.</p></article>
           <article><span>02</span><h3>Connect with your class</h3><p>Keep learning organised around the right classes and subjects.</p></article>
-          <article><span>03</span><h3>Learn and keep progressing</h3><p>Use assignments, exams, resources and discussions as part of everyday learning.</p></article>
+          <article><span>03</span><h3>Learn and keep progressing</h3><p>Use assignments, resources and discussions as part of everyday learning.</p></article>
         </div>
       </section>
 
@@ -187,7 +184,7 @@ export default function Landing() {
           <h2 id="olp-faq-heading">About OLP Homework Hub</h2>
         </div>
         <div className="landing-steps">
-          <article><h3>What is OLP Homework Hub?</h3><p>An online learning workspace for teachers and students to organise classes, assignments, exams, resources and discussions.</p></article>
+          <article><h3>What is OLP Homework Hub?</h3><p>An online learning workspace for teachers and students to organise classes, assignments, resources and discussions.</p></article>
           <article><h3>Can I use OLP on my phone?</h3><p>Yes. OLP Homework Hub is designed for mobile and desktop browsers, so students can access and complete their work on a phone.</p></article>
           <article><h3>Does AI marking replace the teacher?</h3><p>No. AI-assisted marking helps teachers review work against marking keys. Teachers check proposed marks before returning results.</p></article>
         </div>
@@ -215,3 +212,4 @@ export default function Landing() {
     </main>
   )
 }
+
