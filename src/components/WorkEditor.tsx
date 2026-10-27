@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 15209)
-Total output lines: 1955
-
 import { useMemo, useRef, useState } from 'react'
 import {
   BarChart3,
@@ -719,7 +716,663 @@ function GraphEditor({
             <span>Y max</span>
             <input
               type="number"
-              value={value…5209 tokens truncated…option>)}
+              value={value.yMax}
+              onChange={(event) => update('yMax', Number(event.target.value))}
+            />
+          </label>
+
+          <label>
+            <span>Grid step</span>
+            <input
+              type="number"
+              min="0.1"
+              step="0.1"
+              value={value.gridStep}
+              onChange={(event) =>
+                update('gridStep', Math.max(0.1, Number(event.target.value)))
+              }
+            />
+          </label>
+
+          {value.graphType !== 'bar' && (
+            <label className="olp-graph-connect">
+              <input
+                type="checkbox"
+                checked={value.connectPoints || value.graphType === 'line'}
+                onChange={(event) =>
+                  update('connectPoints', event.target.checked)
+                }
+              />
+              <span>Connect plotted points</span>
+            </label>
+          )}
+        </div>
+      )}
+
+      {value.title && <h4 className="olp-graph-title">{value.title}</h4>}
+
+      <div className="olp-graph-canvas">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          role="img"
+          aria-label={value.title || 'Generated graph'}
+        >
+          <rect
+            x={padLeft}
+            y={padTop}
+            width={plotWidth}
+            height={plotHeight}
+            className="olp-graph-background"
+          />
+
+          {xTicks.map((tick) => {
+            const x = xPixel(tick)
+            return (
+              <g key={`x-${tick}`}>
+                <line
+                  x1={x}
+                  x2={x}
+                  y1={padTop}
+                  y2={padTop + plotHeight}
+                  className="olp-graph-grid"
+                />
+                <text
+                  x={x}
+                  y={padTop + plotHeight + 18}
+                  textAnchor="middle"
+                  className="olp-graph-tick"
+                >
+                  {tick}
+                </text>
+              </g>
+            )
+          })}
+
+          {yTicks.map((tick) => {
+            const y = yPixel(tick)
+            return (
+              <g key={`y-${tick}`}>
+                <line
+                  x1={padLeft}
+                  x2={padLeft + plotWidth}
+                  y1={y}
+                  y2={y}
+                  className="olp-graph-grid"
+                />
+                <text
+                  x={padLeft - 8}
+                  y={y + 4}
+                  textAnchor="end"
+                  className="olp-graph-tick"
+                >
+                  {tick}
+                </text>
+              </g>
+            )
+          })}
+
+          {value.xMin <= 0 && value.xMax >= 0 && (
+            <line
+              x1={xPixel(0)}
+              x2={xPixel(0)}
+              y1={padTop}
+              y2={padTop + plotHeight}
+              className="olp-graph-axis"
+            />
+          )}
+
+          {value.yMin <= 0 && value.yMax >= 0 && (
+            <line
+              x1={padLeft}
+              x2={padLeft + plotWidth}
+              y1={yPixel(0)}
+              y2={yPixel(0)}
+              className="olp-graph-axis"
+            />
+          )}
+
+          <rect
+            x={padLeft}
+            y={padTop}
+            width={plotWidth}
+            height={plotHeight}
+            className="olp-graph-border"
+          />
+
+          {value.graphType === 'bar' ? (
+            bars.map((bar) => (
+              <g key={`bar-${bar.index}`}>
+                <rect
+                  x={bar.xPos}
+                  y={bar.yPos}
+                  width={bar.width}
+                  height={bar.height}
+                  className="olp-graph-bar"
+                />
+                <text
+                  x={bar.labelX}
+                  y={padTop + plotHeight + 34}
+                  textAnchor="middle"
+                  className="olp-graph-category"
+                >
+                  {bar.label}
+                </text>
+              </g>
+            ))
+          ) : (
+            <>
+              {(value.connectPoints || value.graphType === 'line') &&
+                numericPoints.length > 1 && (
+                  <polyline
+                    points={linePoints}
+                    className="olp-graph-line"
+                  />
+                )}
+
+              {numericPoints.map((point) => (
+                <circle
+                  key={`point-${point.index}`}
+                  cx={xPixel(point.x)}
+                  cy={yPixel(point.y)}
+                  r="4.5"
+                  className="olp-graph-point"
+                />
+              ))}
+            </>
+          )}
+
+          <text
+            x={padLeft + plotWidth / 2}
+            y={height - 8}
+            textAnchor="middle"
+            className="olp-graph-axis-label"
+          >
+            {value.xLabel}
+          </text>
+
+          <text
+            transform={`translate(16 ${padTop + plotHeight / 2}) rotate(-90)`}
+            textAnchor="middle"
+            className="olp-graph-axis-label"
+          >
+            {value.yLabel}
+          </text>
+        </svg>
+      </div>
+
+      {!readOnly && (
+        <div className="olp-graph-data">
+          <div className="olp-graph-data-heading">
+            <strong>
+              {value.graphType === 'bar'
+                ? 'Bar data'
+                : 'Coordinates'}
+            </strong>
+            <button type="button" onClick={addPoint}>
+              + {value.graphType === 'bar' ? 'Bar' : 'Point'}
+            </button>
+          </div>
+
+          <div className="olp-graph-data-table">
+            <div className="olp-graph-data-row header">
+              <span>
+                {value.graphType === 'bar' ? 'Category / x value' : 'x'}
+              </span>
+              <span>y</span>
+              <span />
+            </div>
+
+            {value.points.map((point, index) => (
+              <div className="olp-graph-data-row" key={index}>
+                <input
+                  value={point.x}
+                  onChange={(event) =>
+                    updatePoint(index, 'x', event.target.value)
+                  }
+                  placeholder={
+                    value.graphType === 'bar'
+                      ? `${index + 1}`
+                      : 'x'
+                  }
+                />
+                <input
+                  value={point.y}
+                  onChange={(event) =>
+                    updatePoint(index, 'y', event.target.value)
+                  }
+                  placeholder="y"
+                />
+                <button
+                  type="button"
+                  onClick={() => removePoint(index)}
+                  disabled={value.points.length <= 1}
+                  aria-label="Remove data row"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <p className="olp-graph-note">
+            Coordinate and line graphs use the axis limits and grid scale above.
+            For bar graphs, enter numeric x positions such as 1, 2, 3 and use
+            the title or surrounding question to name the categories.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function WorkEditor({
+  value,
+  onChange,
+  readOnly = false,
+  placeholder = 'Start typing...',
+}: Props) {
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
+  const [previewMathId, setPreviewMathId] = useState<string | null>(null)
+  const [pasteError, setPasteError] = useState('')
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+
+  const questionNumbers = useMemo(() => {
+    const numbers = new Map<string, number>()
+    let number = 0
+
+    value.blocks.forEach((block) => {
+      if (block.type === 'question') {
+        number += 1
+        numbers.set(block.id, number)
+      }
+    })
+
+    return numbers
+  }, [value.blocks])
+
+  function updateBlocks(blocks: WorkBlock[]) {
+    onChange({ type: 'doc', version: 1, blocks })
+  }
+
+  function addBlock(type: 'paragraph' | 'question' | 'math' | 'table' | 'graph') {
+    if (readOnly) return
+
+    const block: WorkBlock =
+      type === 'table'
+        ? { id: newId(), type: 'table', rows: blankTable() }
+        : type === 'graph'
+          ? { id: newId(), type: 'graph', graph: blankGraphSpec() }
+          : { id: newId(), type, text: '' }
+
+    updateBlocks([...value.blocks, block])
+    setPreviewMathId(null)
+
+    if (type !== 'table' && type !== 'graph') {
+      window.setTimeout(() => {
+        textareaRefs.current[block.id]?.focus()
+      }, 0)
+    }
+  }
+
+  async function addPastedImage(file: File) {
+    try {
+      setPasteError('')
+      const src = await imageFileToDataUrl(file)
+      updateBlocks([
+        ...value.blocks,
+        {
+          id: newId(),
+          type: 'image',
+          src,
+          caption: '',
+        },
+      ])
+    } catch (error) {
+      setPasteError(error instanceof Error ? error.message : 'Could not paste diagram.')
+    }
+  }
+
+  async function handlePaste(event: React.ClipboardEvent) {
+    if (readOnly) return
+
+    const imageItem = firstClipboardImage(event)
+    if (!imageItem) return
+
+    const file = imageItem.getAsFile()
+    if (!file) return
+
+    event.preventDefault()
+    await addPastedImage(file)
+  }
+
+  function updateBlock(id: string, nextText: string) {
+    updateBlocks(
+      value.blocks.map((block) =>
+        block.id === id &&
+        (block.type === 'paragraph' ||
+          block.type === 'question' ||
+          block.type === 'math')
+          ? { ...block, text: nextText }
+          : block,
+      ),
+    )
+  }
+
+  function updateQuestion(id:string,patch:Partial<Extract<WorkBlock,{type:'question'}>>) {
+    updateBlocks(value.blocks.map(block=>block.id===id&&block.type==='question'?{...block,...patch}:block))
+  }
+
+  function updateTable(id: string, rows: string[][]) {
+    updateBlocks(
+      value.blocks.map((block) =>
+        block.id === id && block.type === 'table'
+          ? { ...block, rows }
+          : block,
+      ),
+    )
+  }
+
+  function updateImageCaption(id: string, caption: string) {
+    updateBlocks(
+      value.blocks.map((block) =>
+        block.id === id && block.type === 'image'
+          ? { ...block, caption }
+          : block,
+      ),
+    )
+  }
+
+  function updateGraph(id: string, graph: GraphSpec) {
+    updateBlocks(
+      value.blocks.map((block) =>
+        block.id === id && block.type === 'graph'
+          ? { ...block, graph }
+          : block,
+      ),
+    )
+  }
+
+  function removeBlock(id: string) {
+    if (readOnly) return
+    updateBlocks(value.blocks.filter((block) => block.id !== id))
+    if (activeBlockId === id) setActiveBlockId(null)
+    if (previewMathId === id) setPreviewMathId(null)
+  }
+
+  function insertSymbol(symbol: string) {
+    if (readOnly) return
+
+    let targetId = activeBlockId
+
+    if (!targetId || !value.blocks.some((block) => block.id === targetId)) {
+      const lastEditable = [...value.blocks]
+        .reverse()
+        .find(
+          (block) =>
+            block.type === 'paragraph' ||
+            block.type === 'question' ||
+            block.type === 'math',
+        )
+
+      if (lastEditable) {
+        targetId = lastEditable.id
+      } else {
+        const block: WorkBlock = {
+          id: newId(),
+          type: 'math',
+          text: symbol,
+        }
+        updateBlocks([...value.blocks, block])
+        setActiveBlockId(block.id)
+        setPreviewMathId(null)
+        window.setTimeout(() => textareaRefs.current[block.id]?.focus(), 0)
+        return
+      }
+    }
+
+    const block = value.blocks.find((item) => item.id === targetId)
+    if (
+      !block ||
+      (block.type !== 'paragraph' &&
+        block.type !== 'question' &&
+        block.type !== 'math')
+    ) {
+      return
+    }
+
+    const input = textareaRefs.current[targetId]
+    const start = input?.selectionStart ?? block.text.length
+    const end = input?.selectionEnd ?? block.text.length
+    const nextText =
+      block.text.slice(0, start) + symbol + block.text.slice(end)
+
+    updateBlock(targetId, nextText)
+
+    window.setTimeout(() => {
+      const nextInput = textareaRefs.current[targetId!]
+      if (!nextInput) return
+      const cursor = start + symbol.length
+      nextInput.focus()
+      nextInput.setSelectionRange(cursor, cursor)
+    }, 0)
+  }
+
+  return (
+    <div
+      className={`work-editor${readOnly ? ' read-only' : ''}`}
+      onPaste={handlePaste}
+    >
+      {!readOnly && (
+        <>
+          <div className="work-editor-toolbar">
+            <button type="button" onClick={() => addBlock('paragraph')}>
+              <Type size={15} /> Text
+            </button>
+            <button type="button" onClick={() => addBlock('question')}>
+              <Hash size={15} /> Numbered question
+            </button>
+            <button type="button" onClick={() => addBlock('math')}>
+              <Sigma size={15} /> Maths line
+            </button>
+            <button type="button" onClick={() => addBlock('table')}>
+              <Table2 size={15} /> Table
+            </button>
+            <button type="button" onClick={() => addBlock('graph')}>
+              <BarChart3 size={15} /> Graph
+            </button>
+          </div>
+
+          <div
+            className="work-editor-paste-zone"
+            tabIndex={0}
+            onPaste={handlePaste}
+          >
+            <ImagePlus size={17} />
+            <span>
+              <strong>Paste diagram</strong>
+              <small>Copy an image, click here and press Ctrl+V.</small>
+            </span>
+          </div>
+
+          {pasteError && <p className="work-editor-error">{pasteError}</p>}
+
+          <div className="work-editor-symbols">
+            <span>Maths symbols</span>
+            <div>
+              {mathSymbols.map((symbol) => (
+                <button
+                  key={symbol}
+                  type="button"
+                  onClick={() => insertSymbol(symbol)}
+                  title={`Insert ${symbol}`}
+                >
+                  {symbol}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {value.blocks.length === 0 ? (
+        readOnly ? (
+          <div className="work-editor-empty">No written content.</div>
+        ) : (
+          <button
+            className="work-editor-start"
+            type="button"
+            onClick={() => addBlock('paragraph')}
+          >
+            <Plus size={16} /> Start typing
+          </button>
+        )
+      ) : (
+        <div className="work-editor-blocks">
+          {value.blocks
+            .filter(
+              (block) =>
+                readOnly ||
+                (block.type !== 'answer' &&
+                  block.type !== 'answerTable' &&
+                  block.type !== 'answerImage' &&
+                  block.type !== 'answerGraph'),
+            )
+            .map((block) => {
+              if (block.type === 'answer') {
+                return (
+                  <div className="work-editor-block answer" key={block.id}>
+                    <div className="work-editor-block-label">Student answer</div>
+                    <div className="work-editor-read-value">
+                      <span style={{ whiteSpace: 'pre-wrap' }}>{block.text || 'No answer entered.'}</span>
+                    </div>
+                  </div>
+                )
+              }
+
+              if (block.type === 'answerGraph') {
+                return (
+                  <div className="work-editor-block graph" key={block.id}>
+                    <div className="work-editor-block-label">Student graph</div>
+                    <GraphEditor value={block.graph} onChange={() => {}} readOnly />
+                  </div>
+                )
+              }
+
+              if (block.type === 'answerTable') {
+                return (
+                  <div className="work-editor-block table" key={block.id}>
+                    <div className="work-editor-block-label">Student table</div>
+                    <EditableTable rows={block.rows} onChange={() => {}} readOnly />
+                  </div>
+                )
+              }
+
+              if (block.type === 'answerImage') {
+                return (
+                  <div className="work-editor-block image" key={block.id}>
+                    <div className="work-editor-block-label">Student diagram</div>
+                    {block.src ? <img className="work-editor-image" src={block.src} alt={block.caption || 'Student diagram'} /> : <p>No diagram attached.</p>}
+                    {block.caption && <p className="work-editor-image-caption">{block.caption}</p>}
+                  </div>
+                )
+              }
+
+              if (block.type === 'graph') {
+                return (
+                  <div className="work-editor-block graph" key={block.id}>
+                    <div className="work-editor-block-label">Graph</div>
+                    <GraphEditor
+                      value={block.graph}
+                      onChange={(graph) => updateGraph(block.id, graph)}
+                      readOnly={readOnly}
+                    />
+                    {!readOnly && (
+                      <button
+                        className="work-editor-delete"
+                        type="button"
+                        onClick={() => removeBlock(block.id)}
+                        title="Delete graph"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                )
+              }
+
+              if (block.type === 'table') {
+                return (
+                  <div className="work-editor-block table" key={block.id}>
+                    <div className="work-editor-block-label">Table</div>
+                    <EditableTable
+                      rows={block.rows}
+                      onChange={(rows) => updateTable(block.id, rows)}
+                      readOnly={readOnly}
+                    />
+                    {!readOnly && (
+                      <button
+                        className="work-editor-delete"
+                        type="button"
+                        onClick={() => removeBlock(block.id)}
+                        title="Delete table"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                )
+              }
+
+              if (block.type === 'image') {
+                return (
+                  <div className="work-editor-block image" key={block.id}>
+                    <div className="work-editor-block-label">Diagram</div>
+                    <img className="work-editor-image" src={block.src} alt={block.caption || 'Pasted diagram'} />
+                    {readOnly ? (
+                      block.caption && <p className="work-editor-image-caption">{block.caption}</p>
+                    ) : (
+                      <>
+                        <input
+                          className="work-editor-caption-input"
+                          value={block.caption}
+                          onChange={(event) =>
+                            updateImageCaption(block.id, event.target.value)
+                          }
+                          placeholder="Optional diagram caption"
+                        />
+                        <button
+                          className="work-editor-delete"
+                          type="button"
+                          onClick={() => removeBlock(block.id)}
+                          title="Delete diagram"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              }
+
+              const showMathPreview =
+                block.type === 'math' &&
+                Boolean(block.text.trim()) &&
+                (readOnly || previewMathId === block.id)
+
+              return (
+                <div className={`work-editor-block ${block.type}`} key={block.id}>
+                  <div className="work-editor-block-label">
+                    {block.type === 'paragraph' && 'Text'}
+                    {block.type === 'question' &&
+                      `Question ${questionNumbers.get(block.id) ?? ''}`}
+                    {block.type === 'math' && 'Maths'}
+                  </div>
+
+                  {block.type==='question'&&!readOnly&&(
+                    <div className="work-question-type-controls">
+                      <label>Question type
+                        <select value={block.questionType??'short_answer'} onChange={event=>updateQuestion(block.id,{questionType:event.target.value as AssignmentQuestionType})}>
+                          {Object.entries(assignmentQuestionLabels).map(([type,label])=><option key={type} value={type}>{label}</option>)}
                         </select>
                       </label>
                       {(['multiple_choice','dropdown'] as string[]).includes(block.questionType??'short_answer')&&(
@@ -1299,4 +1952,3 @@ export function QuestionAnswerEditor({
     </div>
   )
 }
-
