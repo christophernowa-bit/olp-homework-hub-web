@@ -562,6 +562,8 @@ function TeacherAssignments({
       setReviewLoading(true)
       setReviewRoster([])
       setReviewSubmissions([])
+      setSubmissionReviews({})
+      setAnnotationDraft(null)
       setExpandedSubmissionId(null)
       setAssignmentMarkingKey('')
       const { data: keyRow, error: keyError } = await supabase.from('assignment_ai_keys')
@@ -1086,8 +1088,7 @@ function TeacherAssignments({
                                   />
                                 </label>
                               )}
-                              {(annotationDraft.kind !== 'highlight' || annotationComment) && (
-                                <label style={{ display: 'block', marginTop: 8 }}>Comment
+                              <label style={{ display: 'block', marginTop: 8 }}>Comment
                                   <textarea
                                     rows={2}
                                     value={annotationComment}
@@ -1095,8 +1096,7 @@ function TeacherAssignments({
                                     placeholder="Explain this highlight or correction..."
                                     style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: 9 }}
                                   />
-                                </label>
-                              )}
+                              </label>
                               <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
                                 <button type="button" disabled={reviewSaveBusy === submission.id} onClick={() => void saveTextAnnotation()}>
                                   {reviewSaveBusy === submission.id ? 'Saving…' : 'Save inline note'}
@@ -1461,6 +1461,7 @@ function StudentAssignments() {
   const [subjects, setSubjects] = useState<SubjectRow[]>([])
   const [assignments, setAssignments] = useState<AssignmentRow[]>([])
   const [submissions, setSubmissions] = useState<SubmissionRow[]>([])
+  const [studentReviewRows, setStudentReviewRows] = useState<Record<string, SubmissionReviewRow>>({})
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [responseDocument, setResponseDocument] = useState<WorkDocument>(emptyWorkDocument)
   const [search, setSearch] = useState('')
@@ -1534,7 +1535,21 @@ function StudentAssignments() {
     setAssignments(loadedAssignments)
     setClasses(loadedClasses)
     setSubjects(loadedSubjects)
-    setSubmissions((submissionResult.data ?? []) as SubmissionRow[])
+    const loadedSubmissions = (submissionResult.data ?? []) as SubmissionRow[]
+    setSubmissions(loadedSubmissions)
+    const returnedIds = loadedSubmissions.filter((row) => row.status === 'returned').map((row) => row.id)
+    if (returnedIds.length) {
+      const { data: rows, error: reviewError } = await supabase
+        .from('assignment_submission_reviews')
+        .select('submission_id,teacher_feedback,annotations,updated_by,updated_at')
+        .in('submission_id', returnedIds)
+      if (reviewError) throw reviewError
+      setStudentReviewRows(Object.fromEntries(
+        ((rows ?? []) as SubmissionReviewRow[]).map((row) => [row.submission_id, row]),
+      ))
+    } else {
+      setStudentReviewRows({})
+    }
 
     if (!selectedClassId && loadedClasses.length > 0) {
       const firstClass = loadedClasses.find((item) =>
@@ -1855,6 +1870,21 @@ function StudentAssignments() {
                   <small>Submissions are still accepted and will be marked as late.</small>
                 </span>
               </div>
+            )}
+            {selectedSubmission?.status === 'returned' && studentReviewRows[selectedSubmission.id] && (
+              <section style={{ marginTop: 16, padding: 14, borderRadius: 10, background: '#f8fafc' }}>
+                <h3 style={{ marginTop: 0 }}>Teacher feedback</h3>
+                {studentReviewRows[selectedSubmission.id].teacher_feedback
+                  ? <p style={{ whiteSpace: 'pre-wrap' }}>{studentReviewRows[selectedSubmission.id].teacher_feedback}</p>
+                  : <p className="muted">No overall comment was added.</p>}
+                {studentReviewRows[selectedSubmission.id].annotations.map((annotation) => (
+                  <article key={annotation.id} style={{ marginTop: 10, padding: 10, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                    <blockquote style={{ margin: '4px 0', paddingLeft: 10, borderLeft: '3px solid #f0c341' }}>{annotation.quote}</blockquote>
+                    {annotation.correction && <p style={{ margin: '4px 0' }}>Suggested correction: <strong>{annotation.correction}</strong></p>}
+                    {annotation.comment && <p style={{ margin: '4px 0' }}>{annotation.comment}</p>}
+                  </article>
+                ))}
+              </section>
             )}
           </div>
         </section>
