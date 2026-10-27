@@ -17,6 +17,7 @@ import WorkEditor, {
   normaliseWorkDocument,
   QuestionAnswerEditor,
   workDocumentToPlainText,
+  type TeacherAnnotation,
   type WorkDocument,
 } from '../components/WorkEditor'
 
@@ -71,6 +72,23 @@ type SubmissionRow = {
   returned_at: string | null
   response_json: unknown
   response_version: number
+}
+
+type SubmissionReviewRow = {
+  submission_id: string
+  teacher_feedback: string
+  annotations: TeacherAnnotation[]
+  updated_by: string | null
+  updated_at: string
+}
+
+type AnnotationDraft = {
+  submission_id: string
+  block_id: string
+  start_offset: number
+  end_offset: number
+  quote: string
+  kind: TeacherAnnotation['kind']
 }
 
 type TeacherRosterRow = {
@@ -150,6 +168,11 @@ function TeacherAssignments({
   const [markingKeySaving, setMarkingKeySaving] = useState(false)
   const [assignmentMarkBusy, setAssignmentMarkBusy] = useState<string | null>(null)
   const [teacherProposedMarks, setTeacherProposedMarks] = useState<Record<string, string>>({})
+  const [submissionReviews, setSubmissionReviews] = useState<Record<string, SubmissionReviewRow>>({})
+  const [annotationDraft, setAnnotationDraft] = useState<AnnotationDraft | null>(null)
+  const [annotationComment, setAnnotationComment] = useState('')
+  const [annotationCorrection, setAnnotationCorrection] = useState('')
+  const [reviewSaveBusy, setReviewSaveBusy] = useState<string | null>(null)
 
   const selectedClassSubjects = useMemo(
     () => subjects.filter((subject) => subject.class_id === form.classId),
@@ -559,8 +582,21 @@ function TeacherAssignments({
 
       if (submissionResult.error) throw submissionResult.error
 
+      const submissions = (submissionResult.data ?? []) as SubmissionRow[]
       setReviewRoster(roster.filter((student: TeacherRosterRow) => student.status === 'active'))
-      setReviewSubmissions((submissionResult.data ?? []) as SubmissionRow[])
+      setReviewSubmissions(submissions)
+      if (submissions.length) {
+        const { data: reviewRows, error: reviewError } = await supabase
+          .from('assignment_submission_reviews')
+          .select('*')
+          .in('submission_id', submissions.map((submission) => submission.id))
+        if (reviewError) throw reviewError
+        setSubmissionReviews(Object.fromEntries(
+          ((reviewRows ?? []) as SubmissionReviewRow[]).map((row) => [row.submission_id, row]),
+        ))
+      } else {
+        setSubmissionReviews({})
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -570,6 +606,121 @@ function TeacherAssignments({
     } finally {
       setReviewLoading(false)
     }
+  }
+
+  function reviewForSubmission(submissionId: string): SubmissionReviewRow {
+    return submissionReviews[submissionId] ?? {
+      submission_id: submissionId,
+      teacher_feedback: '',
+      annotations: [],
+      updated_by: null,
+      updated_at: '',
+    }
+  }
+
+  async function persistSubmissionReview(
+    submissionId: string,
+    review: SubmissionReviewRow,
+    successMessage = 'Teacher review saved.',
+  ) {
+    if (!userId) return
+    try {
+      setReviewSaveBusy(submissionId)
+      setError('')
+      const saved = { ...review, updated_by: userId, updated_at: new Date().toISOString() }
+      const { error: saveError } = await supabase
+        .from('assignment_submission_reviews')
+        .upsert(saved, { onConflict: 'submission_id' })
+      if (saveError) throw saveError
+      setSubmissionReviews((current) => ({ ...current, [submissionId]: saved }))
+      setMessage(successMessage)
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save teacher review.')
+      return false
+    } finally {
+      setReviewSaveBusy(null)
+    }
+  }
+
+  function selectTextForAnnotation(submissionId: string, kind: TeacherAnnotation['kind']) {
+    const selection = window.getSelection()
+    if (!selection || selection.rangeCount === 0 || !selection.toString().trim()) {
+      setError('Select words in the student response first.')
+      return
+    }
+
+    const range = selection.getRangeAt(0)
+    if (range.startContainer !== range.endContainer || range.startContainer.nodeType !== Node.TEXT_NODE) {
+      setError('Select text within one answer paragraph at a time.')
+      return
+    }
+    const anchor = range.startContainer.parentElement?.closest('[data-work-block-id]')
+    if (!anchor) {
+      setError('Select text from a student answer.')
+      return
+    }
+
+    const startRange = document.createRange()
+    startRange.selectNodeContents(anchor)
+    startRange.setEnd(range.startContainer, range.startOffset)
+    const endRange = document.createRange()
+    endRange.selectNodeContents(anchor)
+    endRange.setEnd(range.endContainer, range.endOffset)
+    const quote = selection.toString()
+    setAnnotationDraft({
+      submission_id: submissionId,
+      block_id: anchor.getAttribute('data-work-block-id') ?? '',
+      start_offset: startRange.toString().length,
+      end_offset: endRange.toString().length,
+      quote,
+      kind,
+    })
+    setAnnotationComment('')
+    setAnnotationCorrection('')
+    setError('')
+  }
+
+  async function saveTextAnnotation() {
+    if (!annotationDraft) return
+    if ((annotationDraft.kind === 'comment' || annotationDraft.kind === 'correction') && !annotationComment.trim()) {
+      setError('Add a comment for this annotation.')
+      return
+    }
+    if (annotationDraft.kind === 'correction' && !annotationCorrection.trim()) {
+      setError('Enter the suggested correction.')
+      return
+    }
+    const current = reviewForSubmission(annotationDraft.submission_id)
+    const annotation: TeacherAnnotation = {
+      id: crypto.randomUUID(),
+      block_id: annotationDraft.block_id,
+      start_offset: annotationDraft.start_offset,
+      end_offset: annotationDraft.end_offset,
+      quote: annotationDraft.quote,
+      kind: annotationDraft.kind,
+      comment: annotationComment.trim(),
+      ...(annotationCorrection.trim() ? { correction: annotationCorrection.trim() } : {}),
+    }
+    const saved = await persistSubmissionReview(
+      annotationDraft.submission_id,
+      { ...current, annotations: [...current.annotations, annotation] },
+      'Inline comment saved.',
+    )
+    if (saved) {
+      setAnnotationDraft(null)
+      setAnnotationComment('')
+      setAnnotationCorrection('')
+    }
+  }
+
+  async function removeTextAnnotation(submissionId: string, annotationId: string) {
+    const current = reviewForSubmission(submissionId)
+    await persistSubmissionReview(
+      submissionId,
+      { ...current, annotations: current.annotations.filter((item) => item.id !== annotationId) },
+      'Inline comment removed.',
+    )
   }
 
   async function saveAssignmentMarkingKey() {
@@ -599,7 +750,13 @@ function TeacherAssignments({
       const { data, error: markError } = await supabase.functions.invoke('assignment-ai-mark', {
         body: { submission_id: submissionId },
       })
-      if (markError) throw markError
+      if (markError) {
+        const response = (markError as { context?: Response }).context
+        const details = response && typeof response.clone === 'function'
+          ? await response.clone().json().catch(() => null) as { error?: string } | null
+          : null
+        throw new Error(details?.error || markError.message)
+      }
       if (data?.error) throw new Error(data.error)
       if (typeof data?.ai_mark !== 'number') throw new Error('AI did not return a valid proposed mark.')
       setTeacherProposedMarks(current => ({ ...current, [submissionId]: String(data.ai_mark) }))
@@ -640,6 +797,8 @@ function TeacherAssignments({
     setReviewRoster([])
     setReviewSubmissions([])
     setExpandedSubmissionId(null)
+    setSubmissionReviews({})
+    setAnnotationDraft(null)
     setMessage('')
     setError('')
   }
@@ -873,7 +1032,95 @@ function TeacherAssignments({
                           )}
                           onChange={() => {}}
                           readOnly
+                          annotations={submissionReviews[submission.id]?.annotations ?? []}
                         />
+
+                        <section className="assignment-teacher-review" style={{ marginTop: 18, padding: 16, border: '1px solid #dbe3ef', borderRadius: 12, background: '#fff' }}>
+                          <h4 style={{ margin: '0 0 6px' }}>Teacher comments and corrections</h4>
+                          <p className="muted" style={{ marginTop: 0 }}>Select words in the response above, then add a highlight, comment, or suggested correction.</p>
+                          <label htmlFor={`teacher-feedback-${submission.id}`}>Overall comments</label>
+                          <textarea
+                            id={`teacher-feedback-${submission.id}`}
+                            rows={4}
+                            value={reviewForSubmission(submission.id).teacher_feedback}
+                            onChange={(event) => {
+                              const current = reviewForSubmission(submission.id)
+                              setSubmissionReviews((items) => ({
+                                ...items,
+                                [submission.id]: { ...current, teacher_feedback: event.target.value },
+                              }))
+                            }}
+                            placeholder="Write comments for the student..."
+                            style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 6, padding: 10, border: '1px solid #cbd5e1', borderRadius: 8, font: 'inherit', resize: 'vertical' }}
+                          />
+                          <button
+                            type="button"
+                            disabled={reviewSaveBusy === submission.id}
+                            onClick={() => void persistSubmissionReview(
+                              submission.id,
+                              reviewForSubmission(submission.id),
+                              'Overall comments saved.',
+                            )}
+                            style={{ marginTop: 8 }}
+                          >
+                            {reviewSaveBusy === submission.id ? 'Saving…' : 'Save comments'}
+                          </button>
+
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
+                            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => selectTextForAnnotation(submission.id, 'highlight')}>Highlight selected text</button>
+                            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => selectTextForAnnotation(submission.id, 'comment')}>Comment on selected text</button>
+                            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => selectTextForAnnotation(submission.id, 'correction')}>Suggest a correction</button>
+                          </div>
+
+                          {annotationDraft?.submission_id === submission.id && (
+                            <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: '#f8fafc' }}>
+                              <strong>Selected text</strong>
+                              <blockquote style={{ margin: '6px 0 10px', paddingLeft: 10, borderLeft: '3px solid #94a3b8' }}>{annotationDraft.quote}</blockquote>
+                              {annotationDraft.kind === 'correction' && (
+                                <label>Suggested correction
+                                  <input
+                                    value={annotationCorrection}
+                                    onChange={(event) => setAnnotationCorrection(event.target.value)}
+                                    placeholder="Type the corrected wording"
+                                    style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: 9 }}
+                                  />
+                                </label>
+                              )}
+                              {(annotationDraft.kind !== 'highlight' || annotationComment) && (
+                                <label style={{ display: 'block', marginTop: 8 }}>Comment
+                                  <textarea
+                                    rows={2}
+                                    value={annotationComment}
+                                    onChange={(event) => setAnnotationComment(event.target.value)}
+                                    placeholder="Explain this highlight or correction..."
+                                    style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 5, padding: 9 }}
+                                  />
+                                </label>
+                              )}
+                              <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
+                                <button type="button" disabled={reviewSaveBusy === submission.id} onClick={() => void saveTextAnnotation()}>
+                                  {reviewSaveBusy === submission.id ? 'Saving…' : 'Save inline note'}
+                                </button>
+                                <button type="button" onClick={() => setAnnotationDraft(null)}>Cancel</button>
+                              </div>
+                            </div>
+                          )}
+
+                          {reviewForSubmission(submission.id).annotations.length > 0 && (
+                            <div style={{ marginTop: 16 }}>
+                              <strong>Saved inline notes</strong>
+                              {reviewForSubmission(submission.id).annotations.map((annotation) => (
+                                <article key={annotation.id} style={{ marginTop: 8, padding: 10, border: '1px solid #e2e8f0', borderRadius: 8 }}>
+                                  <div><strong>{annotation.kind === 'correction' ? 'Suggested correction' : annotation.kind === 'highlight' ? 'Highlight' : 'Comment'}</strong></div>
+                                  <blockquote style={{ margin: '5px 0', paddingLeft: 10, borderLeft: '3px solid #f0c341' }}>{annotation.quote}</blockquote>
+                                  {annotation.correction && <p style={{ margin: '4px 0' }}>Correction: <strong>{annotation.correction}</strong></p>}
+                                  {annotation.comment && <p style={{ margin: '4px 0' }}>{annotation.comment}</p>}
+                                  <button type="button" disabled={reviewSaveBusy === submission.id} onClick={() => void removeTextAnnotation(submission.id, annotation.id)}>Remove note</button>
+                                </article>
+                              ))}
+                            </div>
+                          )}
+                        </section>
                       </div>
                     )}
                   </article>
