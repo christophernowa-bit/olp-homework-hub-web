@@ -24,7 +24,8 @@ Deno.serve(async (req: Request) => {
     const { data: assignment } = await admin.from('assignments')
       .select('id,title,created_by,total_marks,content_json,instructions').eq('id', submission.assignment_id).single()
     if (!assignment) return reply({ error: 'Assignment not found' }, 404)
-    const { data: owner } = await admin.rpc('is_platform_owner', { p_user_id: auth.user.id })
+    const { data: owner, error: ownerError } = await userClient.rpc('is_platform_owner')
+    if (ownerError) console.error('assignment-ai-mark owner lookup failed', ownerError.message)
     if (assignment.created_by !== auth.user.id && owner !== true) return reply({ error: 'Only the assignment teacher or owner can mark' }, 403)
     const { data: keyRow } = await admin.from('assignment_ai_keys').select('marking_key_text').eq('assignment_id', assignment.id).single()
     if (!keyRow?.marking_key_text?.trim()) return reply({ error: 'Save the marking key before AI marking' }, 409)
@@ -46,9 +47,28 @@ Deno.serve(async (req: Request) => {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0, responseMimeType: 'application/json' } }),
     })
-    if (!response.ok) return reply({ error: 'AI service temporarily unavailable; no marks were returned' }, 502)
-    const payload = await response.json()
+    const responseText = await response.text()
+    let payload: any = {}
+    try { payload = JSON.parse(responseText) } catch { /* Keep the upstream response body out of logs when it is not JSON. */ }
+    if (!response.ok) {
+      const providerMessage = typeof payload?.error?.message === 'string'
+        ? payload.error.message.replaceAll(apiKey, '[redacted]').slice(0, 280)
+        : `HTTP ${response.status}`
+      console.error('Gemini generateContent failed', {
+        status: response.status,
+        code: payload?.error?.status || payload?.error?.code || null,
+        message: providerMessage,
+      })
+      return reply({
+        error: `AI marking provider error (${response.status}): ${providerMessage}. Check the Gemini API key and model access, then try again.`,
+      }, 502)
+    }
     const output = payload?.candidates?.[0]?.content?.parts?.map((p: {text?:string}) => p.text || '').join('') || ''
+    if (!output) {
+      const reason = payload?.promptFeedback?.blockReason || payload?.candidates?.[0]?.finishReason
+      console.error('Gemini returned no marking content', { reason: reason || 'unknown' })
+      return reply({ error: `AI returned no marking content${reason ? ` (${reason})` : ''}; no marks were saved` }, 502)
+    }
     let result: { mark?: unknown; feedback?: unknown; needs_teacher_review?: unknown }
     try { result = JSON.parse(output) } catch { return reply({ error: 'AI returned invalid data; no marks were saved' }, 502) }
     const mark = Number(result.mark)
