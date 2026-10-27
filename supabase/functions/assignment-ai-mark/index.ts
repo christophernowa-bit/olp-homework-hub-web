@@ -42,7 +42,7 @@ Deno.serve(async (req: Request) => {
       'Teacher marking key: ' + keyRow.marking_key_text,
       'Student response: ' + JSON.stringify({ text: submission.text_response, document: submission.response_json }),
     ].join('\n\n')
-    const models = ['gemini-3.8-flash', 'gemini-3.6-flash']
+    const models = ['gemini-3.8-flash', 'gemini-3.6-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite']
     let model = models[0]
     let response: Response | null = null
     let responseText = ''
