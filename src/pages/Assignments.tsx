@@ -1278,6 +1278,7 @@ function TeacherAssignments({
                 value={assignmentDocument}
                 onChange={setAssignmentDocument}
                 placeholder="Type instructions, questions or maths working..."
+                inlineAddQuestions
               />
             </div>
 
