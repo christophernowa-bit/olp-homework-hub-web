@@ -357,6 +357,7 @@ type Props = {
   readOnly?: boolean
   placeholder?: string
   annotations?: TeacherAnnotation[]
+  inlineAddQuestions?: boolean
 }
 
 const mathSymbols = [
@@ -1016,6 +1017,7 @@ export default function WorkEditor({
   readOnly = false,
   placeholder = 'Start typing...',
   annotations = [],
+  inlineAddQuestions = false,
 }: Props) {
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
   const [previewMathId, setPreviewMathId] = useState<string | null>(null)
@@ -1038,6 +1040,20 @@ export default function WorkEditor({
 
   function updateBlocks(blocks: WorkBlock[]) {
     onChange({ type: 'doc', version: 1, blocks })
+  }
+
+  function insertQuestionAfter(blockId: string) {
+    if (readOnly) return
+    const index = value.blocks.findIndex((block) => block.id === blockId)
+    if (index < 0) return
+
+    const question: WorkBlock = { id: newId(), type: 'question', text: '' }
+    const nextBlocks = [...value.blocks]
+    nextBlocks.splice(index + 1, 0, question)
+    updateBlocks(nextBlocks)
+    setPreviewMathId(null)
+    setActiveBlockId(question.id)
+    window.setTimeout(() => textareaRefs.current[question.id]?.focus(), 0)
   }
 
   function addBlock(type: 'paragraph' | 'question' | 'math' | 'table' | 'graph') {
@@ -1512,6 +1528,16 @@ export default function WorkEditor({
                       >
                         <Trash2 size={14} />
                       </button>
+                      {inlineAddQuestions && block.type === 'question' && (
+                        <button
+                          className="secondary work-editor-add-question-after"
+                          type="button"
+                          onClick={() => insertQuestionAfter(block.id)}
+                          style={{ marginTop: 10 }}
+                        >
+                          <Plus size={14} /> Add question
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
