@@ -146,6 +146,7 @@ function TeacherAssignments({
   const [classes, setClasses] = useState<ClassRow[]>([])
   const [subjects, setSubjects] = useState<SubjectRow[]>([])
   const [assignments, setAssignments] = useState<AssignmentRow[]>([])
+  const [submittedAssignmentIds, setSubmittedAssignmentIds] = useState<Set<string>>(() => new Set())
   const [form, setForm] = useState<AssignmentForm>(blankForm)
   const [assignmentDocument, setAssignmentDocument] = useState<WorkDocument>(emptyWorkDocument)
   const [showForm, setShowForm] = useState(false)
@@ -254,9 +255,28 @@ function TeacherAssignments({
 
     const loadedClasses = (classResult.data ?? []) as ClassRow[]
     const loadedSubjects = (subjectResult.data ?? []) as SubjectRow[]
+    const loadedAssignments = (assignmentResult.data ?? []) as AssignmentRow[]
+    const overdueCandidates = loadedAssignments.filter(
+      (assignment) =>
+        assignment.status === 'published' &&
+        Boolean(assignment.due_at) &&
+        new Date(assignment.due_at!).getTime() < Date.now(),
+    )
+    if (overdueCandidates.length > 0) {
+      const { data: submissionRows, error: submissionError } = await supabase
+        .from('assignment_submissions')
+        .select('assignment_id')
+        .in('assignment_id', overdueCandidates.map((assignment) => assignment.id))
+      if (submissionError) throw submissionError
+      setSubmittedAssignmentIds(
+        new Set((submissionRows ?? []).map((row) => row.assignment_id as string)),
+      )
+    } else {
+      setSubmittedAssignmentIds(new Set())
+    }
     setClasses(loadedClasses)
     setSubjects(loadedSubjects)
-    setAssignments((assignmentResult.data ?? []) as AssignmentRow[])
+    setAssignments(loadedAssignments)
 
     if (!selectedClassId && loadedClasses.length > 0) {
       const firstClass = loadedClasses[0]
@@ -1415,7 +1435,8 @@ function TeacherAssignments({
               const overdue =
                 Boolean(assignment.due_at) &&
                 new Date(assignment.due_at!).getTime() < Date.now() &&
-                assignment.status === 'published'
+                assignment.status === 'published' &&
+                !submittedAssignmentIds.has(assignment.id)
 
               return (
                 <article className="assignment-item" key={assignment.id}>
@@ -1425,7 +1446,7 @@ function TeacherAssignments({
                       <span className={`assignment-status ${assignment.status}`}>
                         {statusLabel(assignment.status)}
                       </span>
-                      {overdue && <span className="assignment-status overdue">Overdue</span>}
+                      {overdue && <span className="assignment-status overdue" title="No student submissions have been received.">Overdue</span>}
                     </div>
                     <p>{className(assignment.class_id)} · {subjectName(assignment.subject_id)}</p>
                     <div className="assignment-meta">
