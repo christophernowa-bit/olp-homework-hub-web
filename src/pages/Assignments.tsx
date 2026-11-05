@@ -1025,21 +1025,19 @@ function TeacherAssignments({
 
                     {submission && (
                       <div className="assignment-ai-marking-actions">
-                        <button type="button" disabled={assignmentMarkBusy === submission.id || !assignmentMarkingKey.trim()}
-                          onClick={() => void markAssignmentWithAi(submission.id)}>
-                          {assignmentMarkBusy === submission.id
-                            ? 'AI marking…'
-                            : submission.status === 'returned'
-                              ? 'AI Re-mark'
-                              : 'AI Mark'}
-                        </button>
-                        {teacherProposedMarks[submission.id] !== undefined && (
+                        {submission.status !== 'returned' && (
+                          <button type="button" disabled={assignmentMarkBusy === submission.id || !assignmentMarkingKey.trim()}
+                            onClick={() => void markAssignmentWithAi(submission.id)}>
+                            {assignmentMarkBusy === submission.id ? 'AI marking…' : 'AI Mark'}
+                          </button>
+                        )}
+                        {teacherProposedMarks[submission.id] !== undefined && submission.status !== 'returned' && (
                           <label>Teacher-reviewed mark
                             <input type="number" min="0" max={reviewAssignment.total_marks} step="0.5"
                               value={teacherProposedMarks[submission.id]}
                               onChange={event => setTeacherProposedMarks(current => ({...current, [submission.id]: event.target.value}))}/>
                             <button type="button" disabled={assignmentMarkBusy === submission.id}
-                              onClick={() => void approveAssignmentMark(submission)}>{submission.status === 'returned' ? 'Update & Return' : 'Approve & Return'}</button>
+                              onClick={() => void approveAssignmentMark(submission)}>Approve & Return</button>
                           </label>
                         )}
                         {submission.status === 'returned' && <strong>Returned: {submission.mark}/{reviewAssignment.total_marks}</strong>}
