@@ -78,11 +78,11 @@ export default function Discussions() {
   function renderPost(post:PostRow,depth=0):React.ReactNode {
     const children=selectedPosts.filter(p=>p.parent_post_id===post.id)
     return <article className="discussion-post" key={post.id} style={{marginLeft:Math.min(depth,4)*16,borderLeft:depth?'3px solid var(--border-color, #d6dbe5)':undefined,paddingLeft:depth?'12px':undefined}}>
-      <div><strong>{personName(post.created_by)}</strong><small>{formatDate(post.created_at)}</small></div>
-      {post.parent_post_id&&<small className="muted">Reply to {personName(selectedPosts.find(p=>p.id===post.parent_post_id)?.created_by??'')}</small>}
+      <div><strong>{postAuthorName(post.created_by)}</strong><small>{formatDate(post.created_at)}</small></div>
+      {post.parent_post_id&&<small className="muted">Reply to {postAuthorName(selectedPosts.find(p=>p.id===post.parent_post_id)?.created_by??'')}</small>}
       <p>{post.body}</p>
       {images.filter(img=>img.post_id===post.id).map(img=>imageUrls[img.id]&&<a key={img.id} href={imageUrls[img.id]} target="_blank" rel="noreferrer"><img className="discussion-attached-image" src={imageUrls[img.id]} alt="Reply screenshot"/></a>)}
-      {selected?.status==='open'&&<button type="button" className="secondary" onClick={()=>{setReplyToPostId(post.id);setReply('')}}>↳ Reply to {personName(post.created_by)}</button>}
+      {selected?.status==='open'&&<button type="button" className="secondary" onClick={()=>{setReplyToPostId(post.id);setReply('')}}>↳ Reply to {postAuthorName(post.created_by)}</button>}
       {(post.created_by===userId||isStaff)&&<button type="button" className="discussion-delete-post" onClick={()=>deletePost(post)} title="Delete reply"><Trash2 size={15}/></button>}
       {children.map(child=>renderPost(child,depth+1))}
     </article>
@@ -102,7 +102,13 @@ export default function Discussions() {
 
   const className=(id:string)=>classes.find(c=>c.id===id)?.name ?? 'Class'
   const subjectName=(id:string)=>subjects.find(s=>s.id===id)?.name ?? 'Subject'
-  const personName=(id:string)=>profiles.find(p=>p.id===id)?.full_name || (id===userId?'You':'Participant')
+  const personName=(id:string, isDiscussionTeacher=false)=>{
+    const profile=profiles.find(p=>p.id===id)
+    const isTeacher=isDiscussionTeacher||(id===userId&&isStaff)
+    const name=profile?.full_name?.trim() || (id===userId?'You':isTeacher?'Teacher':'Participant')
+    return isTeacher&&name!=='Teacher'?name+' · Teacher':name
+  }
+  const postAuthorName=(id:string)=>personName(id,selected?.created_by===id)
 
   async function loadAll() {
     const [classResult,subjectResult,discussionResult,postResult,imageResult] = await Promise.all([
@@ -392,10 +398,10 @@ export default function Discussions() {
       </div>
 
       <div className="panel discussion-thread">{!selected?<div className="empty-state"><MessageCircle size={34}/><strong>Select a discussion</strong><p>Choose a discussion to read and participate.</p></div>:<>
-        <div className="discussion-thread-head"><div><div className="discussion-title-row"><h3>{selected.title}</h3><span className={`discussion-status ${selected.status}`}>{selected.status}</span></div><p>{className(selected.class_id)} · {subjectName(selected.subject_id)} · {personName(selected.created_by)}</p></div>{isStaff&&<div className="discussion-controls"><button className="secondary" onClick={togglePin} disabled={busy}><Pin size={16}/>{selected.is_pinned?'Unpin':'Pin'}</button>{selected.status==='open'?<button className="secondary" onClick={()=>setStatus('closed')} disabled={busy}><Lock size={16}/>Close</button>:<button className="secondary" onClick={()=>setStatus('open')} disabled={busy}><RotateCcw size={16}/>Reopen</button>}<button className="secondary danger-button" onClick={deleteDiscussion} disabled={busy}><Trash2 size={16}/>Delete</button></div>}</div>
+        <div className="discussion-thread-head"><div><div className="discussion-title-row"><h3>{selected.title}</h3><span className={`discussion-status ${selected.status}`}>{selected.status}</span></div><p>{className(selected.class_id)} · {subjectName(selected.subject_id)} · {personName(selected.created_by,true)}</p></div>{isStaff&&<div className="discussion-controls"><button className="secondary" onClick={togglePin} disabled={busy}><Pin size={16}/>{selected.is_pinned?'Unpin':'Pin'}</button>{selected.status==='open'?<button className="secondary" onClick={()=>setStatus('closed')} disabled={busy}><Lock size={16}/>Close</button>:<button className="secondary" onClick={()=>setStatus('open')} disabled={busy}><RotateCcw size={16}/>Reopen</button>}<button className="secondary danger-button" onClick={deleteDiscussion} disabled={busy}><Trash2 size={16}/>Delete</button></div>}</div>
         <article className="discussion-prompt"><small>Opening question · {formatDate(selected.created_at)}</small><p>{selected.body}</p>{images.filter(img=>img.discussion_id===selected.id&&!img.post_id).map(img=>imageUrls[img.id]&&<a key={img.id} href={imageUrls[img.id]} target="_blank" rel="noreferrer"><img className="discussion-attached-image" src={imageUrls[img.id]} alt="Discussion screenshot"/></a>)}</article>
-        <div className="discussion-replies"><h3>Replies ({selectedPosts.length})</h3>{selectedPosts.length===0?<p className="muted">No replies yet.</p>:rootPosts.map(post=>renderPost(post))}{Object.keys(typingParticipants).length>0&&<p className="discussion-typing" aria-live="polite">{Object.keys(typingParticipants).map(personName).join(', ')} {Object.keys(typingParticipants).length===1?'is':'are'} typing…</p>}</div>
-        {selected.status==='open'?<form className="discussion-reply" onSubmit={addReply}>{replyTarget&&<div className="discussion-reply-target"><strong>Replying to {personName(replyTarget.created_by)}</strong><button type="button" className="secondary" onClick={()=>setReplyToPostId(null)}>Cancel reply</button></div>}<textarea value={reply} onChange={e=>{const value=e.target.value;setReply(value);sendReplyTyping(Boolean(value.trim()))}} onBlur={()=>sendReplyTyping(false)} onPaste={e=>handlePaste(e,'reply')} rows={3} maxLength={10000} placeholder="Write your reply or paste a screenshot (Ctrl + V)..."/><label className="discussion-image-picker">Screenshot<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)acceptScreenshot(file,'reply');e.target.value=''}}/></label><ScreenshotPreview file={replyScreenshot} onRemove={()=>setReplyScreenshot(null)}/><button className="primary" disabled={busy||(!reply.trim()&&!replyScreenshot)}><Send size={17}/>Post reply</button></form>:<div className="discussion-closed-note"><Lock size={17}/><span>This discussion is closed. Previous contributions remain available to read.</span></div>}
+        <div className="discussion-replies"><h3>Replies ({selectedPosts.length})</h3>{selectedPosts.length===0?<p className="muted">No replies yet.</p>:rootPosts.map(post=>renderPost(post))}{Object.keys(typingParticipants).length>0&&<p className="discussion-typing" aria-live="polite">{Object.keys(typingParticipants).map(postAuthorName).join(', ')} {Object.keys(typingParticipants).length===1?'is':'are'} typing…</p>}</div>
+        {selected.status==='open'?<form className="discussion-reply" onSubmit={addReply}>{replyTarget&&<div className="discussion-reply-target"><strong>Replying to {postAuthorName(replyTarget.created_by)}</strong><button type="button" className="secondary" onClick={()=>setReplyToPostId(null)}>Cancel reply</button></div>}<textarea value={reply} onChange={e=>{const value=e.target.value;setReply(value);sendReplyTyping(Boolean(value.trim()))}} onBlur={()=>sendReplyTyping(false)} onPaste={e=>handlePaste(e,'reply')} rows={3} maxLength={10000} placeholder="Write your reply or paste a screenshot (Ctrl + V)..."/><label className="discussion-image-picker">Screenshot<input type="file" accept="image/png,image/jpeg,image/webp" onChange={e=>{const file=e.target.files?.[0];if(file)acceptScreenshot(file,'reply');e.target.value=''}}/></label><ScreenshotPreview file={replyScreenshot} onRemove={()=>setReplyScreenshot(null)}/><button className="primary" disabled={busy||(!reply.trim()&&!replyScreenshot)}><Send size={17}/>Post reply</button></form>:<div className="discussion-closed-note"><Lock size={17}/><span>This discussion is closed. Previous contributions remain available to read.</span></div>}
       </>}</div>
     </section>
   </main>
