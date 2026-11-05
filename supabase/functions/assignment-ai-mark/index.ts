@@ -20,7 +20,7 @@ Deno.serve(async (req: Request) => {
     const { data: submission, error: submissionError } = await admin.from('assignment_submissions')
       .select('id,assignment_id,status,text_response,response_json').eq('id', submission_id).single()
     if (submissionError || !submission) return reply({ error: 'Submission not found' }, 404)
-    if (!['submitted', 'marked', 'returned'].includes(submission.status)) return reply({ error: 'Submission cannot be AI marked in its current state' }, 409)
+    if (!['submitted', 'marked'].includes(submission.status)) return reply({ error: 'Submission cannot be AI marked in its current state' }, 409)
     const { data: assignment } = await admin.from('assignments')
       .select('id,title,created_by,total_marks,content_json,instructions').eq('id', submission.assignment_id).single()
     if (!assignment) return reply({ error: 'Assignment not found' }, 404)
