@@ -74,6 +74,9 @@ export default function TeachersForum() {
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || 'Unable to send welcome emails.')
+      if (result.failed_count > 0 && result.sent_count === 0) {
+        throw new Error(result.failures?.[0]?.error || 'Email delivery is not configured.')
+      }
       setNotice(`Welcome emails sent: ${result.sent_count}. Already welcomed: ${result.skipped_count}. Failed: ${result.failed_count}.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to send welcome emails.')
