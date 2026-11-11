@@ -7,7 +7,8 @@ This sender uses the Google account that owns the script. Teachers receive a wel
 1. Sign in to the Google account you want to send OLP emails from.
 2. Open https://script.google.com and create a standalone project called “OLP Homework Hub Mailer”.
 3. Replace the editor contents with `TeacherWelcomeMailer.gs` from this folder and save.
-4. Select `authorizeMailer` and click **Run**. Google will ask you to authorize email sending. Approve it.\n5. Select `generateMailerToken` and click **Run**. In the execution log, copy the generated token and keep it private.
+4. Select `authorizeMailer` and click **Run**. Google will ask you to authorize email sending. Approve it.
+5. Select `generateMailerToken` and click **Run**. In the execution log, copy the generated token and keep it private.
 6. In **Project Settings → Script Properties**, confirm the property `OLP_MAILER_TOKEN` exists. The function sets it automatically.
 
 ## Deploy the web app
