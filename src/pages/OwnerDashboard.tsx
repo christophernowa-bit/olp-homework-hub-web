@@ -1,4 +1,5 @@
 import { ShieldCheck, Users, Settings, BookOpen } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 export default function OwnerDashboard() {
   return (
@@ -30,13 +31,21 @@ export default function OwnerDashboard() {
         <div className="panel quick">
           <h3>Platform management</h3>
 
-          <button type="button">
+          <Link className="secondary" to="/owner/teachers">
+            <Users size={17} />
+            <span>
+              <strong>Teachers Forum</strong>
+              <small>Contact teachers and manage their access</small>
+            </span>
+          </Link>
+
+          <Link className="secondary" to="/owner/users">
             <Users size={17} />
             <span>
               <strong>Users & Roles</strong>
               <small>Manage teachers, students and administrators</small>
             </span>
-          </button>
+          </Link>
 
           <button type="button">
             <BookOpen size={17} />
@@ -55,14 +64,10 @@ export default function OwnerDashboard() {
           </button>
         </div>
 
-        <div className="panel">
-          <div className="empty-state">
-            <ShieldCheck size={34} />
-            <strong>Platform Owner Access</strong>
-            <p>
-              Administrative tools will be added here as we build the platform.
-            </p>
-          </div>
+        <div className="panel quick">
+          <h3>Teacher community</h3>
+          <p>Reach teachers directly by email, see who has access and suspend or restore a teacher account when needed.</p>
+          <Link className="primary" to="/owner/teachers"><Users size={17} /> Open Teachers Forum</Link>
         </div>
       </section>
     </main>
