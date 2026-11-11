@@ -25,12 +25,12 @@ async function sendTeacherWelcomeEmail(
   email: string,
   fullName: string,
 ): Promise<'sent' | 'already_sent'> {
-  const apiKey = Deno.env.get('RESEND_API_KEY')
-  const from = Deno.env.get('OLP_WELCOME_FROM')
+  const endpoint = Deno.env.get('APPS_SCRIPT_WEB_APP_URL')
+  const sharedSecret = Deno.env.get('APPS_SCRIPT_SHARED_SECRET')
   const appUrl = Deno.env.get('OLP_APP_URL')
 
-  if (!apiKey || !from || !appUrl) {
-    throw new Error('Welcome email delivery is not configured yet.')
+  if (!endpoint || !sharedSecret || !appUrl) {
+    throw new Error('Google email delivery is not configured yet.')
   }
 
   const { data: previous, error: lookupError } = await admin
@@ -55,36 +55,23 @@ async function sendTeacherWelcomeEmail(
   const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[char] ?? char))
-  const name = escapeHtml(fullName || 'Teacher')
   const supportUrl = `${appUrl.replace(/\/+$/, '')}/support`
-  const subject = 'Welcome to OLP Homework Hub'
-  const html = `<p>Hello ${name},</p>
-    <p>Welcome to OLP Homework Hub. We are glad you have joined our teaching community.</p>
-    <p>Would you like help getting started or using the platform? Sign in and send us a message in the teacher support chat. The Platform Owner will be able to reply there.</p>
-    <p><a href="${supportUrl}">Open teacher support chat</a></p>
-    <p>Warm regards,<br>OLP Homework Hub</p>`
-  const text = `Hello ${fullName || 'Teacher'},
-
-Welcome to OLP Homework Hub. We are glad you have joined our teaching community.
-
-Would you like help getting started or using the platform? Sign in and send us a message in the teacher support chat. The Platform Owner will be able to reply there:
-${supportUrl}
-
-Warm regards,
-OLP Homework Hub`
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
+    const response = await fetch(endpoint, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ from, to: [email], subject, html, text }),
+      headers: { 'Content-Type': 'application/json' },
+      redirect: 'follow',
+      body: JSON.stringify({
+        token: sharedSecret,
+        to: email,
+        fullName: fullName || 'Teacher',
+        supportUrl,
+      }),
     })
     const result = await response.json().catch(() => ({}))
-    if (!response.ok) {
-      throw new Error(typeof result.message === 'string' ? result.message : 'Email provider rejected the welcome email.')
+    if (!response.ok || result.ok !== true) {
+      throw new Error(typeof result.error === 'string' ? result.error : 'Google could not send the welcome email.')
     }
 
     const { error: sentError } = await admin
@@ -92,7 +79,7 @@ OLP Homework Hub`
       .update({
         status: 'sent',
         sent_at: new Date().toISOString(),
-        provider_message_id: result.id ?? null,
+        provider_message_id: null,
         last_error: null,
       })
       .eq('teacher_id', teacherId)
