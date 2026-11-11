@@ -19,6 +19,94 @@ function jsonResponse(body: unknown, status = 200) {
   })
 }
 
+async function sendTeacherWelcomeEmail(
+  admin: any,
+  teacherId: string,
+  email: string,
+  fullName: string,
+): Promise<'sent' | 'already_sent'> {
+  const apiKey = Deno.env.get('RESEND_API_KEY')
+  const from = Deno.env.get('OLP_WELCOME_FROM')
+  const appUrl = Deno.env.get('OLP_APP_URL')
+
+  if (!apiKey || !from || !appUrl) {
+    throw new Error('Welcome email delivery is not configured yet.')
+  }
+
+  const { data: previous, error: lookupError } = await admin
+    .from('teacher_welcome_email_log')
+    .select('status')
+    .eq('teacher_id', teacherId)
+    .maybeSingle()
+  if (lookupError) throw lookupError
+  if (previous?.status === 'sent') return 'already_sent'
+
+  const { error: logError } = await admin
+    .from('teacher_welcome_email_log')
+    .upsert({
+      teacher_id: teacherId,
+      email,
+      status: 'sending',
+      last_attempt_at: new Date().toISOString(),
+      last_error: null,
+    }, { onConflict: 'teacher_id' })
+  if (logError) throw logError
+
+  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[char] ?? char))
+  const name = escapeHtml(fullName || 'Teacher')
+  const supportUrl = `${appUrl.replace(/\/+$/, '')}/support`
+  const subject = 'Welcome to OLP Homework Hub'
+  const html = `<p>Hello ${name},</p>
+    <p>Welcome to OLP Homework Hub. We are glad you have joined our teaching community.</p>
+    <p>Would you like help getting started or using the platform? Sign in and send us a message in the teacher support chat. The Platform Owner will be able to reply there.</p>
+    <p><a href="${supportUrl}">Open teacher support chat</a></p>
+    <p>Warm regards,<br>OLP Homework Hub</p>`
+  const text = `Hello ${fullName || 'Teacher'},
+
+Welcome to OLP Homework Hub. We are glad you have joined our teaching community.
+
+Would you like help getting started or using the platform? Sign in and send us a message in the teacher support chat. The Platform Owner will be able to reply there:
+${supportUrl}
+
+Warm regards,
+OLP Homework Hub`
+
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from, to: [email], subject, html, text }),
+    })
+    const result = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      throw new Error(typeof result.message === 'string' ? result.message : 'Email provider rejected the welcome email.')
+    }
+
+    const { error: sentError } = await admin
+      .from('teacher_welcome_email_log')
+      .update({
+        status: 'sent',
+        sent_at: new Date().toISOString(),
+        provider_message_id: result.id ?? null,
+        last_error: null,
+      })
+      .eq('teacher_id', teacherId)
+    if (sentError) throw sentError
+    return 'sent'
+  } catch (error) {
+    await admin.from('teacher_welcome_email_log').update({
+      status: 'failed',
+      last_error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown email error.',
+    }).eq('teacher_id', teacherId)
+    throw error
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -121,6 +209,46 @@ Deno.serve(async (req) => {
     if (req.method === 'POST') {
       const body = await req.json()
 
+      if (body.action === 'send_missing_teacher_welcome_emails') {
+        const [{ data: profiles, error: profilesError }, { data: authData, error: authError }] = await Promise.all([
+          admin.from('profiles').select('id, full_name, role').eq('role', 'teacher'),
+          admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+        ])
+        if (profilesError) throw profilesError
+        if (authError) throw authError
+
+        let sentCount = 0
+        let skippedCount = 0
+        const failures: Array<{ email: string; error: string }> = []
+        const authById = new Map(authData.users.map((user) => [user.id, user]))
+
+        for (const profile of profiles ?? []) {
+          const authUser = authById.get(profile.id)
+          const teacherEmail = authUser?.email ?? ''
+          if (!teacherEmail) {
+            failures.push({ email: '(no email on account)', error: 'No email address is available.' })
+            continue
+          }
+          try {
+            const result = await sendTeacherWelcomeEmail(admin, profile.id, teacherEmail, profile.full_name ?? '')
+            if (result === 'sent') sentCount += 1
+            else skippedCount += 1
+          } catch (error) {
+            failures.push({
+              email: teacherEmail,
+              error: error instanceof Error ? error.message : 'Email could not be sent.',
+            })
+          }
+        }
+
+        return jsonResponse({
+          sent_count: sentCount,
+          skipped_count: skippedCount,
+          failed_count: failures.length,
+          failures,
+        })
+      }
+
       const email =
         typeof body.email === 'string'
           ? body.email.trim().toLowerCase()
@@ -170,6 +298,14 @@ Deno.serve(async (req) => {
 
         if (upsertError) {
           throw upsertError
+        }
+
+        if (role === 'teacher' && data.user.email) {
+          try {
+            await sendTeacherWelcomeEmail(admin, data.user.id, data.user.email, fullName)
+          } catch (emailError) {
+            console.error('Teacher welcome email failed:', emailError)
+          }
         }
       }
 
