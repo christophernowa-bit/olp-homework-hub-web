@@ -3,7 +3,11 @@
  * Deploy as a Web app that executes as the Google account which owns this script.
  * The endpoint is protected by a random token stored in Script Properties.
  */
-function authorizeMailer() {\n  return MailApp.getRemainingDailyQuota();\n}\n\nfunction doPost(e) {
+function authorizeMailer() {
+  return MailApp.getRemainingDailyQuota();
+}
+
+function doPost(e) {
   try {
     const expected = PropertiesService.getScriptProperties().getProperty('OLP_MAILER_TOKEN') || '';
     const input = JSON.parse((e && e.postData && e.postData.contents) || '{}');
@@ -41,7 +45,7 @@ function authorizeMailer() {\n  return MailApp.getRemainingDailyQuota();\n}\n\nf
       '',
       'Warm regards,',
       'OLP Homework Hub',
-    ].join('\\n');
+    ].join('\n');
 
     if (MailApp.getRemainingDailyQuota() < 1) {
       return jsonOutput({ ok: false, error: 'The Google account has reached its daily email recipient limit.' });
