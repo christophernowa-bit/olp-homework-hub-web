@@ -1,4 +1,4 @@
-import { ShieldCheck, Users, Settings, BookOpen } from 'lucide-react'
+import { ShieldCheck, Users, Settings, BookOpen, MessageCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 export default function OwnerDashboard() {
@@ -39,6 +39,11 @@ export default function OwnerDashboard() {
             </span>
           </Link>
 
+          <Link className="secondary" to="/owner/support">
+            <MessageCircle size={17} />
+            <span><strong>Teacher Support</strong><small>Reply to teachers in the support chat</small></span>
+          </Link>
+
           <Link className="secondary" to="/owner/users">
             <Users size={17} />
             <span>
@@ -68,6 +73,7 @@ export default function OwnerDashboard() {
           <h3>Teacher community</h3>
           <p>Reach teachers directly by email, see who has access and suspend or restore a teacher account when needed.</p>
           <Link className="primary" to="/owner/teachers"><Users size={17} /> Open Teachers Forum</Link>
+          <Link className="secondary" to="/owner/support"><MessageCircle size={17} /> Open teacher support chat</Link>
         </div>
       </section>
     </main>
