@@ -30,6 +30,9 @@ export default function App() {
           <Route path="/discussions" element={<Discussions />} />
           <Route path="/resources" element={<ResourceCentre />} />
           <Route path="/settings" element={<Settings />} />
+          <Route element={<RoleRoute allowedRoles={['teacher']} />}>
+            <Route path="/support" element={<TeacherSupport />} />
+          </Route>
         </Route>
 
         <Route element={<RoleRoute allowedRoles={['platform_owner']} />}>
@@ -37,9 +40,6 @@ export default function App() {
           <Route path="/owner/users" element={<UsersRoles />} />
           <Route path="/owner/teachers" element={<TeachersForum />} />
           <Route path="/owner/support" element={<OwnerSupportInbox />} />
-        </Route>
-        <Route element={<RoleRoute allowedRoles={['teacher']} />}>
-          <Route path="/support" element={<TeacherSupport />} />
         </Route>
       </Route>
 
