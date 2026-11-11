@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Mail, Search, ShieldCheck, UserRound, UserX, UserCheck } from 'lucide-react'
+import { Mail, Search, ShieldCheck, UserRound, UserX, UserCheck, Copy, Check } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
@@ -19,6 +19,7 @@ export default function TeachersForum() {
   const [search, setSearch] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
 
   async function loadTeachers() {
     setLoading(true)
@@ -136,9 +137,32 @@ export default function TeachersForum() {
                   <span className="admin-role-badge"><UserRound size={16} /> Teacher</span>
                   {teacher.is_suspended && <span className="admin-role-badge" aria-label="Access suspended">Access suspended</span>}
                   {teacher.email && (
-                    <a className="secondary" href={`mailto:${encodeURIComponent(teacher.email)}?subject=${encodeURIComponent('OLP Homework Hub')}`}>
-                      <Mail size={15} /> Email teacher
-                    </a>
+                    <>
+                      <a
+                        className="secondary"
+                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(teacher.email)}&su=${encodeURIComponent('OLP Homework Hub')}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        <Mail size={15} /> Email teacher
+                      </a>
+                      <button
+                        className="secondary"
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(teacher.email)
+                            setCopiedEmail(teacher.email)
+                            window.setTimeout(() => setCopiedEmail(null), 2000)
+                          } catch {
+                            setError('Could not copy the address. You can select the email shown on the teacher card and copy it.')
+                          }
+                        }}
+                      >
+                        {copiedEmail === teacher.email ? <Check size={15} /> : <Copy size={15} />}
+                        {copiedEmail === teacher.email ? 'Copied' : 'Copy email'}
+                      </button>
+                    </>
                   )}
                   <button className={teacher.is_suspended ? 'primary' : 'secondary'} type="button" disabled={busyId === teacher.id} onClick={() => void changeAccess(teacher)}>
                     {teacher.is_suspended ? <UserCheck size={15} /> : <UserX size={15} />}
