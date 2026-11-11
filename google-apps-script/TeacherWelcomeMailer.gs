@@ -3,7 +3,7 @@
  * Deploy as a Web app that executes as the Google account which owns this script.
  * The endpoint is protected by a random token stored in Script Properties.
  */
-function doPost(e) {
+function authorizeMailer() {\n  return MailApp.getRemainingDailyQuota();\n}\n\nfunction doPost(e) {
   try {
     const expected = PropertiesService.getScriptProperties().getProperty('OLP_MAILER_TOKEN') || '';
     const input = JSON.parse((e && e.postData && e.postData.contents) || '{}');
