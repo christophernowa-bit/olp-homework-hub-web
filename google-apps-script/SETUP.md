@@ -7,15 +7,15 @@ This sender uses the Google account that owns the script. Teachers receive a wel
 1. Sign in to the Google account you want to send OLP emails from.
 2. Open https://script.google.com and create a standalone project called “OLP Homework Hub Mailer”.
 3. Replace the editor contents with `TeacherWelcomeMailer.gs` from this folder and save.
-4. Select `generateMailerToken` and click **Run**. Google will ask you to authorize the script to send email. Approve it. In the execution log, copy the generated token and keep it private.
-5. In **Project Settings → Script Properties**, confirm the property `OLP_MAILER_TOKEN` exists. The function sets it automatically.
+4. Select `authorizeMailer` and click **Run**. Google will ask you to authorize email sending. Approve it.\n5. Select `generateMailerToken` and click **Run**. In the execution log, copy the generated token and keep it private.
+6. In **Project Settings → Script Properties**, confirm the property `OLP_MAILER_TOKEN` exists. The function sets it automatically.
 
 ## Deploy the web app
 
 1. Click **Deploy → New deployment**.
 2. Select **Web app**.
 3. Set **Execute as** to your account.
-4. Set **Who has access** to **Anyone**, then deploy. This public endpoint accepts requests only when the private shared token is correct.
+4. Set **Who has access** to **Anyone** (including users not signed in), then deploy. Supabase calls this endpoint without a Google session; the endpoint accepts email requests only when the private 64-character shared token is correct.
 5. Copy the deployment URL ending in `/exec`. Do not use the development `/dev` URL.
 
 ## Add Supabase Edge Function secrets
