@@ -11,6 +11,7 @@ import ProtectedRoute from './components/ProtectedRoute'
 import RoleRoute from './components/RoleRoute'
 import OwnerDashboard from './pages/OwnerDashboard'
 import UsersRoles from './pages/UsersRoles'
+import TeachersForum from './pages/TeachersForum'
 import Landing from './pages/Landing'  
 
 export default function App() {
@@ -32,6 +33,7 @@ export default function App() {
         <Route element={<RoleRoute allowedRoles={['platform_owner']} />}>
           <Route path="/owner" element={<OwnerDashboard />} />
           <Route path="/owner/users" element={<UsersRoles />} />
+          <Route path="/owner/teachers" element={<TeachersForum />} />
         </Route>
       </Route>
 
