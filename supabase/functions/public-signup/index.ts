@@ -52,9 +52,6 @@ async function sendTeacherWelcomeEmail(
     }, { onConflict: 'teacher_id' })
   if (logError) throw logError
 
-  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[char] ?? char))
   const supportUrl = `${appUrl.replace(/\/+$/, '')}/support`
 
   try {
