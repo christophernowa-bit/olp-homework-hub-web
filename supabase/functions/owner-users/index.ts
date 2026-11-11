@@ -223,6 +223,9 @@ Deno.serve(async (req) => {
         const authById = new Map(authData.users.map((user) => [user.id, user]))
 
         for (const profile of profiles ?? []) {
+          if (sentCount + skippedCount > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 600))
+          }
           const authUser = authById.get(profile.id)
           const teacherEmail = authUser?.email ?? ''
           if (!teacherEmail) {
