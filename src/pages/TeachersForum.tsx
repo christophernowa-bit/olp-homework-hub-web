@@ -20,6 +20,7 @@ export default function TeachersForum() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
+  const [sendingWelcome, setSendingWelcome] = useState(false)
 
   async function loadTeachers() {
     setLoading(true)
@@ -53,6 +54,33 @@ export default function TeachersForum() {
       teacher.email.toLowerCase().includes(query),
     )
   }, [teachers, search])
+
+  async function sendWelcomeEmails() {
+    if (!window.confirm('Send the welcome and support email to teachers who have not received it yet?')) return
+    setSendingWelcome(true)
+    setError('')
+    setNotice('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Your session has expired. Please sign in again.')
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/owner-users`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'send_missing_teacher_welcome_emails' }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Unable to send welcome emails.')
+      setNotice(`Welcome emails sent: ${result.sent_count}. Already welcomed: ${result.skipped_count}. Failed: ${result.failed_count}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to send welcome emails.')
+    } finally {
+      setSendingWelcome(false)
+    }
+  }
 
   async function changeAccess(teacher: Teacher) {
     const action = teacher.is_suspended ? 'restore_teacher' : 'deactivate_teacher'
@@ -113,7 +141,11 @@ export default function TeachersForum() {
           <div>
             <h3>Joined teachers</h3>
             <p>{loading ? 'Loading teacher accounts...' : `${teachers.length} teacher account${teachers.length === 1 ? '' : 's'}`}</p>
+            <p>Welcome new and existing teachers, and invite them to ask for help in the in-app chat.</p>
           </div>
+          <button className="primary" type="button" disabled={sendingWelcome} onClick={() => void sendWelcomeEmails()}>
+            <Mail size={16} /> {sendingWelcome ? 'Sending...' : 'Send welcome emails'}
+          </button>
           <div className="admin-search">
             <Search size={18} aria-hidden="true" />
             <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search teachers" aria-label="Search teachers by name or email" />
