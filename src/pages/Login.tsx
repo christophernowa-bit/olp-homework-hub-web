@@ -55,7 +55,9 @@ export default function Login() {
         password,
       })
       if (error) throw error
-      window.location.href = '/dashboard'
+      const redirectTo = new URLSearchParams(window.location.search).get('redirect')
+      const safeRedirect = redirectTo?.startsWith('/') && !redirectTo.startsWith('//') ? redirectTo : '/dashboard'
+      window.location.href = safeRedirect
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Unable to sign in.')
     } finally {

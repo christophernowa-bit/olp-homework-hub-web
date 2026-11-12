@@ -103,6 +103,20 @@ export default function AppLayout() {
             Discussions
           </NavLink>
 
+          {userRole === 'teacher' && (
+            <NavLink to="/support" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+              <MessageCircle size={18} />
+              Help & Support
+            </NavLink>
+          )}
+
+          {userRole === 'platform_owner' && (
+            <NavLink to="/owner/support" className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+              <MessageCircle size={18} />
+              Teacher Support
+            </NavLink>
+          )}
+
           <NavLink
             to="/resources"
             className={({ isActive }) =>

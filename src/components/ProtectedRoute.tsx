@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Navigate, Outlet } from 'react-router-dom'
+import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 export default function ProtectedRoute() {
+  const location = useLocation()
   const [loading, setLoading] = useState(true)
   const [authenticated, setAuthenticated] = useState(false)
 
@@ -26,7 +27,7 @@ export default function ProtectedRoute() {
   }
 
   if (!authenticated) {
-    return <Navigate to="/login" replace />
+    return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`} replace />
   }
 
   return <Outlet />
