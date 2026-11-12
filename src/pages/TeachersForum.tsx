@@ -21,6 +21,7 @@ export default function TeachersForum() {
   const [notice, setNotice] = useState('')
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
   const [sendingWelcome, setSendingWelcome] = useState(false)
+  const [resendingWelcomeId, setResendingWelcomeId] = useState<string | null>(null)
 
   async function loadTeachers() {
     setLoading(true)
@@ -82,6 +83,33 @@ export default function TeachersForum() {
       setError(err instanceof Error ? err.message : 'Unable to send welcome emails.')
     } finally {
       setSendingWelcome(false)
+    }
+  }
+
+  async function resendWelcomeEmail(teacher: Teacher) {
+    if (!window.confirm(`Resend the welcome and Teacher Support email to ${teacher.email}?`)) return
+    setResendingWelcomeId(teacher.id)
+    setError('')
+    setNotice('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Your session has expired. Please sign in again.')
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/owner-users`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'resend_teacher_welcome_email', user_id: teacher.id }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || 'Unable to resend the welcome email.')
+      setNotice(result.message || `Welcome email resent to ${teacher.email}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to resend the welcome email.')
+    } finally {
+      setResendingWelcomeId(null)
     }
   }
 
@@ -181,6 +209,15 @@ export default function TeachersForum() {
                       >
                         <Mail size={15} /> Email teacher
                       </a>
+                      <button
+                        className="secondary"
+                        type="button"
+                        disabled={resendingWelcomeId === teacher.id}
+                        onClick={() => void resendWelcomeEmail(teacher)}
+                      >
+                        <Mail size={15} />
+                        {resendingWelcomeId === teacher.id ? 'Sending...' : 'Resend welcome email'}
+                      </button>
                       <button
                         className="secondary"
                         type="button"

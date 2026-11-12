@@ -24,6 +24,7 @@ async function sendTeacherWelcomeEmail(
   teacherId: string,
   email: string,
   fullName: string,
+  forceResend = false,
 ): Promise<'sent' | 'already_sent'> {
   const endpoint = Deno.env.get('APPS_SCRIPT_WEB_APP_URL')
   const sharedSecret = Deno.env.get('APPS_SCRIPT_SHARED_SECRET')
@@ -39,7 +40,7 @@ async function sendTeacherWelcomeEmail(
     .eq('teacher_id', teacherId)
     .maybeSingle()
   if (lookupError) throw lookupError
-  if (previous?.status === 'sent') return 'already_sent'
+  if (!forceResend && previous?.status === 'sent') return 'already_sent'
 
   const { error: logError } = await admin
     .from('teacher_welcome_email_log')
@@ -192,6 +193,30 @@ Deno.serve(async (req) => {
      */
     if (req.method === 'POST') {
       const body = await req.json()
+
+      if (body.action === 'resend_teacher_welcome_email') {
+        const teacherId = typeof body.user_id === 'string' ? body.user_id.trim() : ''
+        if (!teacherId) return jsonResponse({ error: 'Teacher ID is required.' }, 400)
+
+        const { data: teacherProfile, error: teacherError } = await admin
+          .from('profiles')
+          .select('id, full_name, role')
+          .eq('id', teacherId)
+          .maybeSingle()
+        if (teacherError) throw teacherError
+        if (!teacherProfile) return jsonResponse({ error: 'Teacher not found.' }, 404)
+        if (teacherProfile.role !== 'teacher') {
+          return jsonResponse({ error: 'This action is only available for teacher accounts.' }, 400)
+        }
+
+        const { data: authData, error: authError } = await admin.auth.admin.getUserById(teacherId)
+        if (authError) throw authError
+        const teacherEmail = authData.user?.email ?? ''
+        if (!teacherEmail) return jsonResponse({ error: 'No email address is available for this teacher.' }, 400)
+
+        await sendTeacherWelcomeEmail(admin, teacherId, teacherEmail, teacherProfile.full_name ?? '', true)
+        return jsonResponse({ message: `Welcome email resent to ${teacherEmail}.` })
+      }
 
       if (body.action === 'send_missing_teacher_welcome_emails') {
         const [{ data: profiles, error: profilesError }, { data: authData, error: authError }] = await Promise.all([
